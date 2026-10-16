@@ -334,7 +334,8 @@ export const getMenusAfterService = async (lineUid, selectedDate = null, forceRe
 
 /**
  * Business Logic สำหรับคำนวณสรุปพลังงานและสารอาหารประจำวัน
- * โดยนับเฉพาะอาหารที่ได้รับการเปรียบเทียบหลังกินแล้วเท่านั้น (ก่อนกิน - หลังกิน)
+ * 1. เมื่อถ่ายรูปก่อนกิน (foodRecords) จะนำค่าแคลอรี่และสารอาหารเต็มจำนวนมาคิดทันที
+ * 2. เมื่อมีการเปรียบเทียบภาพหลังกิน (foodAfterRecords) จะนำค่าที่คำนวณได้จริงหลังกินมาปรับแทนที่
  * @param {Array} foodRecords - รายการอาหารก่อนกิน (food_menu)
  * @param {Array} foodAfterRecords - รายการอาหารหลังกิน (food_menu_after)
  * @returns {{ totalCal: number, totalProtein: number, totalCarb: number, totalFat: number }}
@@ -345,22 +346,45 @@ export const calculateDailyNutrition = (foodRecords = [], foodAfterRecords = [])
   let totalCarb = 0;
   let totalFat = 0;
 
-  if (!Array.isArray(foodRecords) || !Array.isArray(foodAfterRecords)) {
+  if (!Array.isArray(foodRecords)) {
     return { totalCal, totalProtein, totalCarb, totalFat };
   }
 
+  const safeAfterList = Array.isArray(foodAfterRecords) ? foodAfterRecords : [];
+
   foodRecords.forEach((record) => {
-    const afterData = foodAfterRecords.find(
+    // 1. ค่าเริ่มต้นเต็มจำนวนจากภาพอาหารก่อนกิน
+    let itemCal = Number(record.cal) || 0;
+    let itemProtein = Number(record.protein) || 0;
+    let itemCarb = Number(record.carb) || 0;
+    let itemFat = Number(record.fat) || 0;
+
+    // 2. ตรวจสอบว่ามีการบันทึกภาพเปรียบเทียบหลังกินแล้วหรือไม่
+    const afterData = safeAfterList.find(
       (after) => Number(after.food_menu_id) === Number(record.id)
     );
 
-    // นับเฉพาะอาหารที่ได้รับประทานแล้วและมีบันทึกหลังกิน
     if (afterData) {
-      totalCal += Number(afterData.cal) || 0;
-      totalProtein += Number(afterData.protein) || 0;
-      totalCarb += Number(afterData.carb) || 0;
-      totalFat += Number(afterData.fat) || 0;
+      // หากมีการเปรียบเทียบหลังกินแล้ว ให้ใช้ค่าหลังกินที่หักลบส่วนที่ทานเหลือแล้ว
+      if (afterData.cal !== undefined && afterData.cal !== null) {
+        itemCal = Number(afterData.cal) || 0;
+        itemProtein = Number(afterData.protein) || 0;
+        itemCarb = Number(afterData.carb) || 0;
+        itemFat = Number(afterData.fat) || 0;
+      } else if (afterData.eat_percent !== undefined && afterData.eat_percent !== null) {
+        const percentRatio = Number(afterData.eat_percent) / 100;
+        itemCal = itemCal * percentRatio;
+        itemProtein = itemProtein * percentRatio;
+        itemCarb = itemCarb * percentRatio;
+        itemFat = itemFat * percentRatio;
+      }
     }
+
+    // 3. รวมผลรวมแคลอรี่และสารอาหาร
+    totalCal += itemCal;
+    totalProtein += itemProtein;
+    totalCarb += itemCarb;
+    totalFat += itemFat;
   });
 
   return {
