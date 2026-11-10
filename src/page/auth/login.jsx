@@ -17,6 +17,23 @@ const Login = () => {
     setSnackbar({ ...snackbar, open: false });
   };
 
+  const handleBypassLogin = () => {
+    const mockUser = {
+      id: "mock-admin-1",
+      accountno: "ADM001",
+      username: "admin",
+      full_name: "Admin Caly",
+      email: "admin@caly.com",
+      roles: ["admin", "dev"],
+      lineUid: "mock-line-uid",
+      displayName: "Admin Caly"
+    };
+
+    localStorage.setItem("access_token", "mock-access-token");
+    localStorage.setItem("user", JSON.stringify(mockUser));
+    navigate("/admin-dashboard");
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
@@ -35,7 +52,7 @@ const Login = () => {
         localStorage.setItem("access_token", result.data.access_token);
         localStorage.setItem("user", JSON.stringify(result.data.user));
         setSnackbar({ open: true, message: "เข้าสู่ระบบสำเร็จ", severity: "success" });
-        setTimeout(() => navigate("/portal"), 1000);
+        setTimeout(() => navigate("/dashboard"), 1000);
       } else {
         setSnackbar({ open: true, message: result.message || "ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง", severity: "error" });
       }
@@ -47,7 +64,7 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-[#f0f4f0] p-4 sm:p-6 font-['Sarabun']">
+    <div className="min-h-screen w-full flex items-center justify-center bg-[#f0f4f0] p-4 sm:p-6 font-['Knit']">
       <div className="w-full max-w-[320px] sm:max-w-[360px] animate-fadeIn">
         
         {/* Simple Branding */}
@@ -116,6 +133,14 @@ const Login = () => {
               ) : (
                 "เข้าสู่ระบบ"
               )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleBypassLogin}
+              className="w-full flex justify-center items-center py-2.5 sm:py-3 text-[11px] sm:text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 transition-all rounded-none uppercase tracking-widest mt-2"
+            >
+              Bypass Login (เข้า Admin Dashboard ทันที)
             </button>
           </form>
 

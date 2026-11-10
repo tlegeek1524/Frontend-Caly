@@ -1,0 +1,37 @@
+[
+  {
+    "accountno": "CALY001",
+    "full_name": "สมชาย รักสุขภาพ",
+    "username": "somchai_fit",
+    "email": "somchai@caly.app",
+    "roles": ["dev", "user"]
+  },
+  {
+    "accountno": "CALY002",
+    "full_name": "อรทัย สายคลีน",
+    "username": "orn_clean",
+    "email": "orn@caly.app",
+    "roles": ["user"]
+  },
+  {
+    "accountno": "CALY003",
+    "full_name": "กิตติพงษ์ ฟิตเนส",
+    "username": "kittipong_gym",
+    "email": "kittipong@caly.app",
+    "roles": ["dev", "user"]
+  },
+  {
+    "accountno": "CALY004",
+    "full_name": "สุดาพร โภชนา",
+    "username": "sudaporn_c",
+    "email": "sudaporn@caly.app",
+    "roles": ["user"]
+  },
+  {
+    "accountno": "CALY005",
+    "full_name": "ธนกฤต วิศวกรอาหาร",
+    "username": "thanakrit_eng",
+    "email": "thanakrit@caly.app",
+    "roles": ["user"]
+  }
+]

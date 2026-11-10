@@ -1,0 +1,37 @@
+{
+  "admin": {
+    "dashboard": "Dashboard",
+    "overview": "Overview",
+    "map": "Map",
+    "users": "Permissions",
+    "auditLogs": "Audit Logs",
+    "eventLogs": "Event Logs",
+    "profile": "Profile",
+    "overviewTitle": "Overview & Resources",
+    "geoTitle": "Photo Geo Locations",
+    "userMgmtTitle": "User & Role Management",
+    "auditLogsTitle": "Session Audit Logs",
+    "eventLogsTitle": "System Event Logs",
+    "exportCsv": "Export CSV",
+    "saveRoles": "Save Roles",
+    "reset": "Reset",
+    "search": "Search...",
+    "logout": "Logout",
+    "totalUsers": "Total Users",
+    "totalPhotos": "Total Photos",
+    "storage": "Storage Usage",
+    "serverLoad": "Server Load",
+    "allProvinces": "All Available Provinces",
+    "latest": "Latest",
+    "recordsFound": "records",
+    "coordsFound": "coordinates"
+  },
+  "common": {
+    "success": "Success",
+    "error": "Error",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "lightMode": "Light Mode",
+    "darkMode": "Dark Mode"
+  }
+}

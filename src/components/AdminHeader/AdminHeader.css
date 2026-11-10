@@ -1,0 +1,135 @@
+.admin-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle, #f1f5f9);
+}
+
+.admin-page-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary, #0f172a);
+  letter-spacing: -0.02em;
+}
+
+.admin-page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Tool Buttons (Theme & Language) */
+.admin-header-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 10px;
+  background-color: var(--bg-surface-secondary, #f8fafc);
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: 8px;
+  color: var(--text-secondary, #475569);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.admin-header-tool-btn:hover {
+  background-color: var(--bg-hover, #f1f5f9);
+  color: #1677ff;
+  border-color: #93c5fd;
+}
+
+.admin-header-tool-text {
+  font-family: ui-monospace, monospace;
+}
+
+.admin-header-profile-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  color: var(--text-primary, #334155);
+}
+
+.admin-header-profile-btn:hover {
+  background-color: var(--bg-surface-secondary, #f8fafc);
+  border-color: var(--border-subtle, #e2e8f0);
+}
+
+.admin-header-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  background-color: #f1f5f9;
+  border: 1px solid #cbd5e1;
+}
+
+.admin-header-avatar-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: #f1f5f9;
+  color: #64748b;
+  font-size: 13px;
+  border: 1px solid #e2e8f0;
+}
+
+.admin-header-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary, #1e293b);
+}
+
+.admin-header-logout-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: transparent;
+  border: 1px solid #fecdd3;
+  border-radius: 8px;
+  color: #e11d48;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.admin-header-logout-btn:hover {
+  background-color: #fff1f2;
+  border-color: #fda4af;
+}
+
+@media (max-width: 768px) {
+  .admin-page-header {
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+  }
+  .admin-page-title {
+    font-size: 17px;
+  }
+  .admin-header-name {
+    display: none;
+  }
+  .admin-header-logout-btn {
+    display: none !important;
+  }
+}

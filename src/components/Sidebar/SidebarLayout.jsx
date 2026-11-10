@@ -1,75 +1,55 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Box,
-  Toolbar,
   ThemeProvider,
   createTheme,
   CssBaseline,
 } from "@mui/material";
 import { Outlet } from "react-router-dom";
 import LoadingOverlay from "../Loading/LoadingOverlay";
-import Navbar from "../navbar/navbar";
 import Sidebar from "./Sidebar";
-import { fetchWithAuth } from "../../utils/api";
-
-const defaultTheme = createTheme({
-  typography: {
-    fontFamily: '"Sarabun", sans-serif',
-  },
-  palette: {
-    primary: {
-      main: "#3b82f6",
-    },
-    background: {
-      default: "#f8fafc",
-    },
-  },
-});
+import { useApp } from "../../context/AppContext";
 
 const SidebarLayout = () => {
+  const { theme } = useApp();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const muiTheme = useMemo(() => {
+    const isDark = theme === "dark";
+    return createTheme({
+      typography: {
+        fontFamily: '"Knit", "Sarabun", sans-serif',
+      },
+      palette: {
+        mode: isDark ? "dark" : "light",
+        primary: {
+          main: "#3b82f6",
+        },
+        background: {
+          default: isDark ? "#0f172a" : "#f8fafc",
+          paper: isDark ? "#1e293b" : "#ffffff",
+        },
+        text: {
+          primary: isDark ? "#f8fafc" : "#0f172a",
+          secondary: isDark ? "#94a3b8" : "#64748b",
+        },
+      },
+    });
+  }, [theme]);
+
   useEffect(() => {
-    const fetchUserInfo = async () => {
-      // ตรวจสอบก่อนว่ามีข้อมูลใน localStorage หรือไม่เพื่อความเร็วสูงสุด
-      const savedUser = localStorage.getItem("user");
-      if (savedUser) {
-        setUser(JSON.parse(savedUser));
-        // เรายังคงเรียก fetch เพื่ออัปเดตข้อมูลในพื้นหลัง (ถ้ามี Cache ใน api.js มันจะเร็วมาก)
-      }
-
-      const token = localStorage.getItem("access_token");
-      if (!token) {
-        setIsLoading(false);
-        return;
-      }
-
+    const savedUser = localStorage.getItem("user");
+    if (savedUser) {
       try {
-        // ใช้ cache: true เฉพาะข้อมูล user-info ตามคำขอ
-        const response = await fetchWithAuth("/users/user-info", { useCache: true });
-        
-        if (!response) return; 
-
-        const result = await response.json();
-        if (response.ok && result.status === 200) {
-          setUser(result.data);
-          localStorage.setItem("user", JSON.stringify(result.data));
-        }
-      } catch (err) {
-        console.error("SidebarLayout: Failed to fetch user info", err);
-      } finally {
-        setIsLoading(false);
+        setUser(JSON.parse(savedUser));
+      } catch (e) {
+        console.error("Parse user error:", e);
       }
-    };
-
-    fetchUserInfo();
+    }
+    setIsLoading(false);
   }, []);
-
-  const handleMenuToggle = () => {
-    setIsMenuOpen(!isMenuOpen);
-  };
 
   const handleMenuClose = () => {
     setIsMenuOpen(false);
@@ -80,19 +60,11 @@ const SidebarLayout = () => {
   }
 
   return (
-    <ThemeProvider theme={defaultTheme}>
-      <Box
-        sx={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}
-      >
+    <ThemeProvider theme={muiTheme}>
+      <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100vh", bgcolor: "background.default" }}>
         <CssBaseline />
 
-        {/* Navbar Component */}
-        <Navbar onMenuToggle={handleMenuToggle} user={user} />
-
-        {/* Spacer for Fixed AppBar */}
-        <Toolbar />
-
-        {/* Main Content Container */}
+        {/* Main Content Container without Navbar */}
         <Box sx={{ position: "relative", flexGrow: 1, display: "flex" }}>
           {/* Sidebar Component */}
           <Sidebar isOpen={isMenuOpen} onClose={handleMenuClose} />
@@ -102,9 +74,10 @@ const SidebarLayout = () => {
             component="main"
             sx={{
               flexGrow: 1,
+              minWidth: 0,
               p: 0, 
               bgcolor: "background.default",
-              minHeight: "calc(100vh - 64px)",
+              minHeight: "100vh",
             }}
           >
             <Outlet context={{ user }} />

@@ -98,36 +98,56 @@ const LineCallback = () => {
 
         profileData.userId = profile.userId;
 
-        // เช็คว่า user มีข้อมูล Cal (TDEE) หรือไม่
+        // ดึงข้อมูลและตรวจสอบ role / is_status จากฐานข้อมูล
+        let userData = null;
         let hasCalData = false;
         try {
           const userRes = await getUserService(profileData.userId);
           if (userRes.success && userRes.data) {
-            const record = userRes.data;
-            hasCalData = record && record.cal && record.cal !== 0 && record.cal !== '0';
+            userData = userRes.data;
+            hasCalData = Boolean(userData && userData.cal && userData.cal !== 0 && userData.cal !== '0');
           }
         } catch (e) {
           console.log('Cannot check user data:', e);
         }
 
-        // เก็บข้อมูล user
+        const rawStatus = (userData?.is_status || userData?.status || userData?.role || '').toString().trim().toUpperCase();
+        const userRoles = Array.isArray(userData?.roles)
+          ? userData.roles.map((r) => String(r).toLowerCase())
+          : typeof userData?.roles === 'string'
+          ? [userData.roles.toLowerCase()]
+          : [];
+
+        const isAdmin = rawStatus === 'ADMIN' || userRoles.includes('admin') || userRoles.includes('dev');
+
+        // เก็บข้อมูล user และ session tokens
         const user = {
           id: profileData.userId,
-          name: profileData.name,
-          picture: profileData.picture,
-          email: profileData.email,
+          name: profileData.name || userData?.name || userData?.full_name || '',
+          picture: profileData.picture || userData?.picture || '',
+          email: profileData.email || userData?.email || '',
+          is_status: userData?.is_status || (isAdmin ? 'ADMIN' : 'USER'),
+          roles: isAdmin
+            ? Array.from(new Set([...userRoles, 'admin', 'dev']))
+            : userRoles.length > 0
+            ? userRoles
+            : ['user'],
           access_token: profileData.access_token,
-          refresh_token: profileData.refresh_token
+          refresh_token: profileData.refresh_token,
+          ...(userData || {})
         };
 
         localStorage.setItem('user', JSON.stringify(user));
+        localStorage.setItem('access_token', profileData.access_token);
         sessionStorage.removeItem('line_login_state');
 
-        // ถ้ามีข้อมูล Cal (TDEE) ไป dashboard, ถ้าไม่มีไป regis
-        if (hasCalData) {
-          navigate('/dashboard');
+        // ตรวจสอบระดับสิทธิ์ (is_status / role)
+        if (isAdmin) {
+          navigate('/admin-dashboard', { replace: true });
+        } else if (hasCalData) {
+          navigate('/dashboard', { replace: true });
         } else {
-          navigate('/regis');
+          navigate('/regis', { replace: true });
         }
       } catch (err) {
         console.error('Login error:', err);

@@ -56,7 +56,7 @@ const Signup = () => {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-[#f0f4f0] p-6 py-12 font-['Sarabun']">
+    <div className="min-h-screen w-full flex items-center justify-center bg-[#f0f4f0] p-6 py-12 font-['Knit']">
       <div className="w-full max-w-[400px] animate-fadeIn">
         
         {/* Simple Branding */}

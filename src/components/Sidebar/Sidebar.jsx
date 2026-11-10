@@ -31,7 +31,7 @@ const Sidebar = ({ isOpen, onClose }) => {
   };
 
   const menuItems = [
-    { text: "Main", icon: <DashboardIcon />, path: "/main" },
+    { text: "Dashboard", icon: <DashboardIcon />, path: "/dashboard" },
     { text: "Profile", icon: <PersonIcon />, path: "/profile" },
     { text: "Settings", icon: <SettingsIcon />, path: "/settings" },
   ];
