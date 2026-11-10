@@ -1,4 +1,4 @@
-import { useState, useEffect, useTransition } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Tabs, message, Form, Modal, Button, Tag } from "antd";
 import {
@@ -17,7 +17,9 @@ import type {
   EventLogRecord,
   GeoLocationRecord,
   UserRole,
-  BanUserPayload
+  BanUserPayload,
+  RailwayCompareData,
+  DashboardCountResponse
 } from "../../types/admin";
 
 import {
@@ -25,7 +27,9 @@ import {
   fetchEventLogsService,
   fetchAllUsersService,
   updateRoleService,
-  banUserService
+  banUserService,
+  fetchRailwayCompareService,
+  fetchDashboardCountService
 } from "../../services/adminService";
 
 import geoLocationsData from "../../data/mock/geoLocations.json";
@@ -110,6 +114,23 @@ export const AdminDashboard = () => {
 
   const [searchLogQuery, setSearchLogQuery] = useState("");
   const [selectedPhotoLocation, setSelectedPhotoLocation] = useState<GeoLocationRecord | null>(null);
+  const [railwayCompare, setRailwayCompare] = useState<RailwayCompareData | null>(null);
+  const [dashboardCounts, setDashboardCounts] = useState<DashboardCountResponse | null>(null);
+
+  const loadRailwayCompare = async (): Promise<number | undefined> => {
+    const res = await fetchRailwayCompareService();
+    if (res.success && res.data) {
+      setRailwayCompare(res.data);
+    }
+    return res.serverTimeMs;
+  };
+
+  const loadDashboardCounts = async () => {
+    const res = await fetchDashboardCountService();
+    if (res.success && res.data) {
+      setDashboardCounts(res.data);
+    }
+  };
 
   const loadAuditLogs = async (notify = false) => {
     setIsLoading(true);
@@ -253,6 +274,10 @@ export const AdminDashboard = () => {
   };
 
   useEffect(() => {
+    let isMounted = true;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const FIVE_MINUTES_MS = 5 * 60 * 1000;
+
     try {
       const userStr = localStorage.getItem("user");
       if (userStr) {
@@ -264,6 +289,29 @@ export const AdminDashboard = () => {
     loadAuditLogs();
     loadEventLogs();
     loadUsersList();
+
+    const syncByServerTime = async () => {
+      const [serverTimeMs] = await Promise.all([
+        loadRailwayCompare(),
+        loadDashboardCounts()
+      ]);
+
+      if (!isMounted) return;
+
+      // คำนวณเวลาที่เหลือจนถึงรอบ 5 นาทีถัดไปของเวลา Server (เช่น :00, :05, :10, :15 ...)
+      const delayMs = serverTimeMs
+        ? FIVE_MINUTES_MS - (serverTimeMs % FIVE_MINUTES_MS)
+        : FIVE_MINUTES_MS;
+
+      timeoutId = setTimeout(syncByServerTime, Math.max(1000, delayMs));
+    };
+
+    syncByServerTime();
+
+    return () => {
+      isMounted = false;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, []);
 
   const handleLogout = () => {
@@ -273,8 +321,6 @@ export const AdminDashboard = () => {
     message.success("ออกจากระบบเรียบร้อยแล้ว");
     navigate("/linelogin", { replace: true });
   };
-
-  const activeSessionsCount = logs.filter((l) => l.is_active).length;
 
   const filteredLogs = logs.filter((log) => {
     if (!searchLogQuery) return true;
@@ -319,8 +365,16 @@ export const AdminDashboard = () => {
       {/* Top 4 Stat Cards ย้ายขึ้นบนสุด (ซ่อนเมื่ออยู่ในหน้าโปรไฟล์) */}
       {activeTab !== "profile" && (
         <AdminStatCards
-          totalUsers={allUsers.length || 256}
-          activeSessionsCount={activeSessionsCount}
+          totalUsers={dashboardCounts?.User?.count ?? 0}
+          totalPhotos={dashboardCounts?.Image_food?.count ?? 0}
+          storageUsage={railwayCompare?.databaseStorage?.used ?? "-"}
+          storageMax={railwayCompare?.databaseStorage?.max ?? "-"}
+          serverLoad={
+            railwayCompare?.cpuUsage?.usagePercent !== undefined
+              ? `${railwayCompare.cpuUsage.usagePercent}%`
+              : "-"
+          }
+          serverLoadMax={railwayCompare?.cpuUsage ? "100%" : "-"}
         />
       )}
 
@@ -336,7 +390,7 @@ export const AdminDashboard = () => {
           {
             key: "overview",
             label: <span><DashboardOutlined /> {t("admin.overviewTitle")}</span>,
-            children: <OverviewTab />
+            children: <OverviewTab railwayCompare={railwayCompare} />
           },
           {
             key: "geo",

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Card,
   Row,
@@ -7,20 +7,19 @@ import {
   Radio,
   DatePicker,
   Segmented,
-  Typography,
   Button,
-  Tooltip as AntTooltip,
-  Space
+  Tooltip as AntTooltip
 } from "antd";
 import {
   CalendarOutlined,
   LineChartOutlined,
   BarChartOutlined,
-  ClockCircleOutlined,
   ReloadOutlined
 } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import { AdminFilterBar } from "../components/AdminFilterBar";
+import type { RailwayCompareData, RequestsTimelineResponse } from "../../../types/admin";
+import { fetchRequestsTimelineService } from "../../../services/adminService";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -35,7 +34,6 @@ import {
 } from "chart.js";
 import { Line, Bar } from "react-chartjs-2";
 
-const { Text } = Typography;
 const { RangePicker } = DatePicker;
 
 ChartJS.register(
@@ -59,13 +57,6 @@ const HOURLY_LABELS = [
   "18:00", "19:00", "20:00", "21:00", "22:00", "23:00"
 ];
 
-const HOURLY_UPLOADS = [
-  4, 2, 1, 0, 1, 8,
-  24, 65, 82, 45, 60, 115,
-  138, 92, 54, 48, 70, 128,
-  145, 112, 85, 64, 38, 12
-];
-
 const HOURLY_ACTIVE_USERS = [
   12, 8, 4, 3, 5, 15,
   42, 98, 130, 85, 96, 175,
@@ -73,13 +64,72 @@ const HOURLY_ACTIVE_USERS = [
   210, 165, 120, 92, 55, 24
 ];
 
-export const AdminOverviewTab = () => {
+type AdminOverviewTabProps = {
+  railwayCompare?: RailwayCompareData | null;
+};
+
+export const AdminOverviewTab = ({ railwayCompare }: AdminOverviewTabProps) => {
   const [filterMode, setFilterMode] = useState<PresetFilter>("1day");
   const [customRange, setCustomRange] = useState<[Dayjs, Dayjs]>([
     dayjs().subtract(6, "day"),
     dayjs()
   ]);
   const [metricType, setMetricType] = useState<"uploads" | "activeUsers">("uploads");
+  const [timelineData, setTimelineData] = useState<RequestsTimelineResponse | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadTimeline = async () => {
+      if (filterMode === "1day") {
+        const res = await fetchRequestsTimelineService({
+          date: dayjs().format("YYYY-MM-DD"),
+          interval: "1h",
+          fillEmpty: true,
+          path: "/api/v1/menu",
+          method: "POST",
+          timezone: "Asia/Bangkok"
+        });
+        if (isMounted && res.success && res.data) {
+          setTimelineData(res.data);
+        }
+        return;
+      }
+
+      let startDate: Dayjs;
+      let endDate: Dayjs;
+
+      if (filterMode === "7days") {
+        startDate = dayjs().subtract(6, "day");
+        endDate = dayjs();
+      } else if (filterMode === "30days") {
+        startDate = dayjs().subtract(29, "day");
+        endDate = dayjs();
+      } else {
+        startDate = customRange[0];
+        endDate = customRange[1];
+      }
+
+      const res = await fetchRequestsTimelineService({
+        from: startDate.format("YYYY-MM-DD"),
+        to: endDate.format("YYYY-MM-DD"),
+        interval: "1d",
+        fillEmpty: true,
+        path: "/api/v1/menu",
+        method: "POST",
+        timezone: "Asia/Bangkok"
+      });
+      if (isMounted && res.success && res.data) {
+        setTimelineData(res.data);
+      }
+    };
+
+    loadTimeline();
+    const timer = setInterval(loadTimeline, 5 * 60 * 1000);
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
+  }, [filterMode, customRange]);
 
   const handleResetToDefault = () => {
     setFilterMode("1day");
@@ -88,7 +138,50 @@ export const AdminOverviewTab = () => {
 
   const chartDataComputed = useMemo(() => {
     if (filterMode === "1day") {
-      const data = metricType === "uploads" ? HOURLY_UPLOADS : HOURLY_ACTIVE_USERS;
+      if (metricType === "uploads") {
+        const hourlyCounts = new Array(24).fill(0);
+        const series = timelineData?.timeSeries || [];
+
+        series.forEach((slot) => {
+          const menuPost = slot.endpoints?.find(
+            (ep) => ep.method === "POST" && ep.endpoint === "/api/v1/menu"
+          );
+          if (menuPost) {
+            const hourIdx = slot.label
+              ? parseInt(slot.label.split(":")[0], 10)
+              : dayjs(slot.timeBucket).hour();
+            if (!Number.isNaN(hourIdx) && hourIdx >= 0 && hourIdx < 24) {
+              hourlyCounts[hourIdx] += menuPost.totalRequests || 0;
+            }
+          }
+        });
+
+        const summaryPost = timelineData?.endpointsSummary?.find(
+          (ep) => ep.method === "POST" && ep.endpoint === "/api/v1/menu"
+        );
+
+        const seriesSum = hourlyCounts.reduce((sum, v) => sum + v, 0);
+        const total = summaryPost ? summaryPost.totalRequests : seriesSum;
+        const avg = Number((total / HOURLY_LABELS.length).toFixed(1));
+        const peak = Math.max(...hourlyCounts);
+        const peakIndex = hourlyCounts.indexOf(peak);
+
+        return {
+          labels: HOURLY_LABELS,
+          data: hourlyCounts,
+          label: "อัปโหลดอาหาร (POST /api/v1/menu)",
+          unit: "รูป",
+          endpointStat: summaryPost || null,
+          summary: {
+            total,
+            avg,
+            peak: peak > 0 ? `${peak} (${HOURLY_LABELS[peakIndex]})` : "0",
+            periodText: `วันนี้ (${dayjs().format("DD/MM/YYYY")})`
+          }
+        };
+      }
+
+      const data = HOURLY_ACTIVE_USERS;
       const total = data.reduce((sum, v) => sum + v, 0);
       const avg = Math.round(total / data.length);
       const peak = Math.max(...data);
@@ -97,8 +190,9 @@ export const AdminOverviewTab = () => {
       return {
         labels: HOURLY_LABELS,
         data,
-        label: metricType === "uploads" ? "อัปโหลดอาหาร" : "ผู้ใช้งาน Active",
-        unit: metricType === "uploads" ? "รูป" : "คน",
+        label: "ผู้ใช้งาน Active",
+        unit: "คน",
+        endpointStat: null,
         summary: {
           total,
           avg,
@@ -126,11 +220,60 @@ export const AdminOverviewTab = () => {
     const labels: string[] = [];
     const data: number[] = [];
 
+    if (metricType === "uploads") {
+      const dateCountMap = new Map<string, number>();
+      const series = timelineData?.timeSeries || [];
+
+      series.forEach((slot) => {
+        const menuPost = slot.endpoints?.find(
+          (ep) => ep.method === "POST" && ep.endpoint === "/api/v1/menu"
+        );
+        if (menuPost) {
+          const dateKey =
+            slot.label && /^\d{4}-\d{2}-\d{2}$/.test(slot.label)
+              ? slot.label
+              : dayjs(slot.timeBucket).format("YYYY-MM-DD");
+          dateCountMap.set(dateKey, (dateCountMap.get(dateKey) || 0) + (menuPost.totalRequests || 0));
+        }
+      });
+
+      for (let i = 0; i < diffDays; i++) {
+        const curr = startDate.add(i, "day");
+        labels.push(curr.format("DD/MM"));
+        const dateKey = curr.format("YYYY-MM-DD");
+        data.push(dateCountMap.get(dateKey) || 0);
+      }
+
+      const summaryPost = timelineData?.endpointsSummary?.find(
+        (ep) => ep.method === "POST" && ep.endpoint === "/api/v1/menu"
+      );
+
+      const seriesSum = data.reduce((sum, v) => sum + v, 0);
+      const total = summaryPost ? summaryPost.totalRequests : seriesSum;
+      const avg = Number((total / data.length).toFixed(1));
+      const peak = Math.max(...data);
+      const peakIndex = data.indexOf(peak);
+
+      return {
+        labels,
+        data,
+        label: "อัปโหลดอาหาร (POST /api/v1/menu)",
+        unit: "รูป",
+        endpointStat: summaryPost || null,
+        summary: {
+          total,
+          avg,
+          peak: peak > 0 ? `${peak} (${labels[peakIndex]})` : "0",
+          periodText: `${startDate.format("DD/MM")} - ${endDate.format("DD/MM")} (${diffDays} วัน)`
+        }
+      };
+    }
+
     for (let i = 0; i < diffDays; i++) {
       const curr = startDate.add(i, "day");
       labels.push(curr.format("DD/MM"));
       const daySeed = (curr.date() * 17 + curr.month() * 31) % 100;
-      const baseVal = metricType === "uploads" ? 180 + daySeed * 2 : 120 + daySeed * 1.5;
+      const baseVal = 120 + daySeed * 1.5;
       data.push(Math.round(baseVal));
     }
 
@@ -142,8 +285,9 @@ export const AdminOverviewTab = () => {
     return {
       labels,
       data,
-      label: metricType === "uploads" ? "อัปโหลดอาหาร" : "ผู้ใช้งาน Active",
-      unit: metricType === "uploads" ? "รูป" : "คน",
+      label: "ผู้ใช้งาน Active",
+      unit: "คน",
+      endpointStat: null,
       summary: {
         total,
         avg,
@@ -151,7 +295,7 @@ export const AdminOverviewTab = () => {
         periodText: `${startDate.format("DD/MM")} - ${endDate.format("DD/MM")} (${diffDays} วัน)`
       }
     };
-  }, [filterMode, customRange, metricType]);
+  }, [filterMode, customRange, metricType, timelineData]);
 
   const mainChartData = {
     labels: chartDataComputed.labels,
@@ -309,7 +453,7 @@ export const AdminOverviewTab = () => {
 
       {/* Main Detailed Chart & Province Chart */}
       <Row gutter={[12, 12]}>
-        <Col xs={24} lg={15}>
+        <Col xs={24} lg={12}>
           <Card
             className="admin-overview-chart-card"
             title={
@@ -354,8 +498,9 @@ export const AdminOverviewTab = () => {
         </Col>
 
         {/* Chart 2: Province Users */}
-        <Col xs={24} lg={9}>
+        <Col xs={24} lg={12}>
           <Card
+            className="admin-overview-chart-card"
             title={
               <div>
                 <div className="admin-dashboard-card-title">ผู้ใช้งานในแต่ละจังหวัด</div>
@@ -373,34 +518,65 @@ export const AdminOverviewTab = () => {
           </Card>
         </Col>
 
-        {/* Server Resources Utilization */}
+        {/* Server Resources Utilization & Railway Limits */}
         <Col xs={24}>
           <Card
-            title={<div className="admin-dashboard-card-title">การใช้งานทรัพยากรเซิร์ฟเวอร์</div>}
+            title={
+              <div className="admin-dashboard-card-title">
+                การใช้งานทรัพยากรเซิร์ฟเวอร์
+              </div>
+            }
             variant="borderless"
             styles={{ body: { padding: "14px 16px" } }}
           >
             <Row gutter={[12, 12]}>
               <Col xs={24} md={8}>
                 <div className="admin-dashboard-resource-row">
-                  <span>CPU Load</span>
-                  <span className="admin-dashboard-resource-val">28%</span>
+                  <span>CPU Usage</span>
+                  <span className="admin-dashboard-resource-val">
+                    {railwayCompare?.cpuUsage
+                      ? `${railwayCompare.cpuUsage.used} / ${railwayCompare.cpuUsage.max}`
+                      : "-"}
+                  </span>
                 </div>
-                <Progress percent={28} strokeColor="#1677ff" size="small" />
+                <Progress
+                  percent={railwayCompare?.cpuUsage?.usagePercent ?? 0}
+                  strokeColor="#1677ff"
+                  size="small"
+                  format={(p) => `${p ?? 0}%`}
+                />
               </Col>
               <Col xs={24} md={8}>
                 <div className="admin-dashboard-resource-row">
                   <span>Memory (RAM)</span>
-                  <span className="admin-dashboard-resource-val">1.8 GB / 4.0 GB</span>
+                  <span className="admin-dashboard-resource-val">
+                    {railwayCompare?.memoryRam
+                      ? `${railwayCompare.memoryRam.used} / ${railwayCompare.memoryRam.max}`
+                      : "-"}
+                  </span>
                 </div>
-                <Progress percent={45} strokeColor="#52c41a" size="small" />
+                <Progress
+                  percent={railwayCompare?.memoryRam?.usagePercent ?? 0}
+                  strokeColor="#52c41a"
+                  size="small"
+                  format={(p) => `${p ?? 0}%`}
+                />
               </Col>
               <Col xs={24} md={8}>
                 <div className="admin-dashboard-resource-row">
-                  <span>Database Storage</span>
-                  <span className="admin-dashboard-resource-val">18.4 GB / 50.0 GB</span>
+                  <span>Storage / Disk</span>
+                  <span className="admin-dashboard-resource-val">
+                    {railwayCompare?.storageDisk
+                      ? `${railwayCompare.storageDisk.used} / ${railwayCompare.storageDisk.max}`
+                      : "-"}
+                  </span>
                 </div>
-                <Progress percent={36.8} strokeColor="#722ed1" size="small" />
+                <Progress
+                  percent={railwayCompare?.storageDisk?.usagePercent ?? 0}
+                  strokeColor="#722ed1"
+                  size="small"
+                  format={(p) => `${p ?? 0}%`}
+                />
               </Col>
             </Row>
           </Card>
@@ -409,3 +585,4 @@ export const AdminOverviewTab = () => {
     </div>
   );
 };
+

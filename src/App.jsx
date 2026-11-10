@@ -19,55 +19,55 @@ import "./App.css";
 
 function App() {
   return (
-    <ErrorBoundary>
-      <AppProvider>
-        <BrowserRouter>
-        <Toaster
-          position="top-right"
-          reverseOrder={false}
-          toastOptions={{
-            className: "text-xs font-medium !py-2 !px-3 !rounded-xl !shadow-md !max-w-xs",
-            duration: 3500,
-            style: {
-              fontSize: "12px",
-              padding: "8px 12px",
-            },
-          }}
-        />
-        <Routes>
-          {/* Public Routes */}
-          <Route path="/" element={<LineLogin />} />
-          <Route path="/linelogin" element={<LineLogin />} />
-          <Route path="/auth/line/callback" element={<LineCallback />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
-          <Route path="/regis" element={<Regispage />} />
+    <BrowserRouter>
+      <ErrorBoundary>
+        <AppProvider>
+          <Toaster
+            position="top-right"
+            reverseOrder={false}
+            toastOptions={{
+              className: "text-xs font-medium !py-2 !px-3 !rounded-xl !shadow-md !max-w-xs",
+              duration: 3500,
+              style: {
+                fontSize: "12px",
+                padding: "8px 12px",
+              },
+            }}
+          />
+          <Routes>
+            {/* Public Routes */}
+            <Route path="/" element={<LineLogin />} />
+            <Route path="/linelogin" element={<LineLogin />} />
+            <Route path="/auth/line/callback" element={<LineCallback />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+            <Route path="/regis" element={<Regispage />} />
 
-          {/* User Routes */}
-          <Route path="/dashboard" element={<MainDashboard />} />
-          <Route path="/foodmenu" element={<FoodMenu />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/settings" element={<Settings />} />
+            {/* User Routes */}
+            <Route path="/dashboard" element={<MainDashboard />} />
+            <Route path="/foodmenu" element={<FoodMenu />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/settings" element={<Settings />} />
 
-          {/* Protected Admin Routes (รองรับ 403 Forbidden เมื่อไม่มีสิทธิ์) */}
-          <Route element={<RoleProtectedRoute allowedRoles={["admin", "dev"]} />}>
-            <Route element={<SidebarLayout />}>
-              <Route path="/admin-dashboard" element={<AdminDashboard />} />
-              <Route path="/admin-dashboard/:tab" element={<AdminDashboard />} />
+            {/* Protected Admin Routes (รองรับ 403 Forbidden เมื่อไม่มีสิทธิ์) */}
+            <Route element={<RoleProtectedRoute allowedRoles={["admin", "dev"]} />}>
+              <Route element={<SidebarLayout />}>
+                <Route path="/admin-dashboard" element={<AdminDashboard />} />
+                <Route path="/admin-dashboard/:tab" element={<AdminDashboard />} />
+              </Route>
             </Route>
-          </Route>
 
-          {/* Explicit Error Routes */}
-          <Route path="/403" element={<ErrorPage type="403" />} />
-          <Route path="/404" element={<ErrorPage type="404" />} />
-          <Route path="/500" element={<ErrorPage type="500" />} />
+            {/* Explicit Error Routes */}
+            <Route path="/403" element={<ErrorPage type="403" />} />
+            <Route path="/404" element={<ErrorPage type="404" />} />
+            <Route path="/500" element={<ErrorPage type="500" />} />
 
-          {/* Catch-all 404 Route */}
-          <Route path="*" element={<ErrorPage type="404" />} />
-        </Routes>
-      </BrowserRouter>
-    </AppProvider>
-  </ErrorBoundary>
+            {/* Catch-all 404 Route */}
+            <Route path="*" element={<ErrorPage type="404" />} />
+          </Routes>
+        </AppProvider>
+      </ErrorBoundary>
+    </BrowserRouter>
   );
 }
 

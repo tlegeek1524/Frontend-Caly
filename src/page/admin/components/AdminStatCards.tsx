@@ -8,7 +8,6 @@ import {
 
 type AdminStatCardsProps = {
   totalUsers: number;
-  activeSessionsCount?: number;
   totalPhotos?: number;
   storageUsage?: string;
   storageMax?: string;
@@ -17,12 +16,12 @@ type AdminStatCardsProps = {
 };
 
 export const AdminStatCards = ({
-  totalUsers,
-  totalPhotos = 1482,
-  storageUsage = "18.4",
-  storageMax = "50 GB",
-  serverLoad = "32%",
-  serverLoadMax = "100%"
+  totalUsers = 0,
+  totalPhotos = 0,
+  storageUsage = "-",
+  storageMax = "-",
+  serverLoad = "-",
+  serverLoadMax = "-"
 }: AdminStatCardsProps) => {
   return (
     <Row gutter={[8, 8]} className="admin-dashboard-stats-row">
@@ -56,7 +55,7 @@ export const AdminStatCards = ({
         <Card variant="borderless" className="admin-dashboard-stat-card" styles={{ body: { padding: 0 } }}>
           <div className="admin-stat-compact-card">
             <div className="admin-stat-top">
-              <span className="admin-stat-title">ข้อมูลในระบบ</span>
+              <span className="admin-stat-title">ข้อมูลในระบบ (PostgreSQL DB)</span>
               <DatabaseOutlined className="admin-stat-icon admin-stat-icon-storage" />
             </div>
             <div className="admin-stat-bottom">

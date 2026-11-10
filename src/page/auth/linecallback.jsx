@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import LoadingOverlay from '../../components/Loading/LoadingOverlay';
-import { getUserService } from '../../services/user.service';
+import { getUserService, verifyAdminService } from '../../services/user.service';
 
 const LineCallback = () => {
   const navigate = useNavigate();
@@ -98,6 +98,20 @@ const LineCallback = () => {
 
         profileData.userId = profile.userId;
 
+        // ตรวจสอบสิทธิ์ผู้ดูแลระบบผ่าน verifyAdminService ด้วย id_token / line_uid
+        let verifyAdminData = null;
+        try {
+          const verifyRes = await verifyAdminService({
+            id_token: tokenData.id_token,
+            line_uid: profileData.userId,
+          });
+          if (verifyRes.success && verifyRes.data) {
+            verifyAdminData = verifyRes.data;
+          }
+        } catch (e) {
+          console.warn('[LineCallback] verifyAdminService error:', e);
+        }
+
         // ดึงข้อมูลและตรวจสอบ role / is_status จากฐานข้อมูล
         let userData = null;
         let hasCalData = false;
@@ -111,6 +125,7 @@ const LineCallback = () => {
           console.log('Cannot check user data:', e);
         }
 
+        const verifyStatus = (verifyAdminData?.is_status || '').toString().trim().toUpperCase();
         const rawStatus = (userData?.is_status || userData?.status || userData?.role || '').toString().trim().toUpperCase();
         const userRoles = Array.isArray(userData?.roles)
           ? userData.roles.map((r) => String(r).toLowerCase())
@@ -118,7 +133,7 @@ const LineCallback = () => {
           ? [userData.roles.toLowerCase()]
           : [];
 
-        const isAdmin = rawStatus === 'ADMIN' || userRoles.includes('admin') || userRoles.includes('dev');
+        const isAdmin = verifyStatus === 'ADMIN' || rawStatus === 'ADMIN' || userRoles.includes('admin') || userRoles.includes('dev');
 
         // เก็บข้อมูล user และ session tokens
         const user = {
@@ -126,7 +141,7 @@ const LineCallback = () => {
           name: profileData.name || userData?.name || userData?.full_name || '',
           picture: profileData.picture || userData?.picture || '',
           email: profileData.email || userData?.email || '',
-          is_status: userData?.is_status || (isAdmin ? 'ADMIN' : 'USER'),
+          is_status: (verifyStatus === 'ADMIN' || rawStatus === 'ADMIN' || isAdmin) ? 'ADMIN' : (userData?.is_status || 'USER'),
           roles: isAdmin
             ? Array.from(new Set([...userRoles, 'admin', 'dev']))
             : userRoles.length > 0
