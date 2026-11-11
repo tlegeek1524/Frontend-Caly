@@ -21,6 +21,36 @@
   gap: 8px;
 }
 
+/* User View Redirect Button */
+.admin-header-user-view-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  background-color: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  color: #059669;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.admin-header-user-view-btn:hover {
+  background-color: #d1fae5;
+  border-color: #6ee7b7;
+  color: #047857;
+  transform: translateY(-1px);
+}
+
+.admin-header-user-view-btn:active {
+  transform: translateY(0);
+}
+
 /* Tool Buttons (Theme & Language) */
 .admin-header-tool-btn {
   display: inline-flex;
@@ -128,6 +158,12 @@
   }
   .admin-header-name {
     display: none;
+  }
+  .admin-header-user-view-btn span {
+    display: none;
+  }
+  .admin-header-user-view-btn {
+    padding: 0 8px;
   }
   .admin-header-logout-btn {
     display: none !important;

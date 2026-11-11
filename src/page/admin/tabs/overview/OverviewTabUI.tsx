@@ -8,6 +8,9 @@ import {
   DatePicker,
   Segmented,
   Button,
+  Skeleton,
+  Divider,
+  Select,
   Tooltip as AntTooltip
 } from "antd";
 import {
@@ -17,9 +20,9 @@ import {
   ReloadOutlined
 } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
-import { AdminFilterBar } from "../components/AdminFilterBar";
-import type { RailwayCompareData, RequestsTimelineResponse } from "../../../types/admin";
-import { fetchRequestsTimelineService } from "../../../services/adminService";
+import { AdminFilterBar } from "../../components/AdminFilterBar";
+import type { RailwayCompareData, RequestsTimelineResponse, ProvinceStatisticItem } from "../../../../types/admin";
+import { fetchRequestsTimelineService, fetchProvinceStatisticsService } from "../../../../services/adminService";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -68,7 +71,7 @@ type AdminOverviewTabProps = {
   railwayCompare?: RailwayCompareData | null;
 };
 
-export const AdminOverviewTab = ({ railwayCompare }: AdminOverviewTabProps) => {
+export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
   const [filterMode, setFilterMode] = useState<PresetFilter>("1day");
   const [customRange, setCustomRange] = useState<[Dayjs, Dayjs]>([
     dayjs().subtract(6, "day"),
@@ -76,14 +79,52 @@ export const AdminOverviewTab = ({ railwayCompare }: AdminOverviewTabProps) => {
   ]);
   const [metricType, setMetricType] = useState<"uploads" | "activeUsers">("uploads");
   const [timelineData, setTimelineData] = useState<RequestsTimelineResponse | null>(null);
+  const [loadingTimeline, setLoadingTimeline] = useState(false);
+  const [provinceStats, setProvinceStats] = useState<ProvinceStatisticItem[]>([]);
+  const [loadingProvinceStats, setLoadingProvinceStats] = useState(false);
+  const [selectedProvinceFilter, setSelectedProvinceFilter] = useState<string>("all");
+  const [availableProvincesList, setAvailableProvincesList] = useState<string[]>([]);
 
   useEffect(() => {
     let isMounted = true;
-    const loadTimeline = async () => {
-      if (filterMode === "1day") {
+    const loadTimeline = async (isBackground = false) => {
+      if (!isBackground) {
+        setLoadingTimeline(true);
+      }
+      try {
+        if (filterMode === "1day") {
+          const res = await fetchRequestsTimelineService({
+            date: dayjs().format("YYYY-MM-DD"),
+            interval: "1h",
+            fillEmpty: true,
+            path: "/api/v1/menu",
+            method: "POST",
+            timezone: "Asia/Bangkok"
+          });
+          if (isMounted && res.success && res.data) {
+            setTimelineData(res.data);
+          }
+          return;
+        }
+
+        let startDate: Dayjs;
+        let endDate: Dayjs;
+
+        if (filterMode === "7days") {
+          startDate = dayjs().subtract(6, "day");
+          endDate = dayjs();
+        } else if (filterMode === "30days") {
+          startDate = dayjs().subtract(29, "day");
+          endDate = dayjs();
+        } else {
+          startDate = customRange[0];
+          endDate = customRange[1];
+        }
+
         const res = await fetchRequestsTimelineService({
-          date: dayjs().format("YYYY-MM-DD"),
-          interval: "1h",
+          from: startDate.format("YYYY-MM-DD"),
+          to: endDate.format("YYYY-MM-DD"),
+          interval: "1d",
           fillEmpty: true,
           path: "/api/v1/menu",
           method: "POST",
@@ -92,44 +133,51 @@ export const AdminOverviewTab = ({ railwayCompare }: AdminOverviewTabProps) => {
         if (isMounted && res.success && res.data) {
           setTimelineData(res.data);
         }
-        return;
-      }
-
-      let startDate: Dayjs;
-      let endDate: Dayjs;
-
-      if (filterMode === "7days") {
-        startDate = dayjs().subtract(6, "day");
-        endDate = dayjs();
-      } else if (filterMode === "30days") {
-        startDate = dayjs().subtract(29, "day");
-        endDate = dayjs();
-      } else {
-        startDate = customRange[0];
-        endDate = customRange[1];
-      }
-
-      const res = await fetchRequestsTimelineService({
-        from: startDate.format("YYYY-MM-DD"),
-        to: endDate.format("YYYY-MM-DD"),
-        interval: "1d",
-        fillEmpty: true,
-        path: "/api/v1/menu",
-        method: "POST",
-        timezone: "Asia/Bangkok"
-      });
-      if (isMounted && res.success && res.data) {
-        setTimelineData(res.data);
+      } finally {
+        if (isMounted && !isBackground) {
+          setLoadingTimeline(false);
+        }
       }
     };
 
-    loadTimeline();
-    const timer = setInterval(loadTimeline, 5 * 60 * 1000);
+    loadTimeline(false);
+    const timer = setInterval(() => loadTimeline(true), 5 * 60 * 1000);
     return () => {
       isMounted = false;
       clearInterval(timer);
     };
   }, [filterMode, customRange]);
+
+  // โหลดสถิติจำนวนแต่ละจังหวัดจาก GET /api/food-locations/provinces
+  useEffect(() => {
+    let isMounted = true;
+    const loadProvinces = async () => {
+      setLoadingProvinceStats(true);
+      try {
+        const res = await fetchProvinceStatisticsService({
+          province: selectedProvinceFilter !== "all" ? selectedProvinceFilter : undefined
+        });
+
+        if (isMounted && res.success) {
+          setProvinceStats(res.data);
+          // อัปเดตรายชื่อจังหวัดสำหรับตัวเลือก filter ถ้ายังไม่มี
+          if (selectedProvinceFilter === "all" && res.data.length > 0) {
+            const list = res.data.map((item) => item.province).filter(Boolean);
+            setAvailableProvincesList(Array.from(new Set(list)));
+          }
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingProvinceStats(false);
+        }
+      }
+    };
+
+    loadProvinces();
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedProvinceFilter]);
 
   const handleResetToDefault = () => {
     setFilterMode("1day");
@@ -344,25 +392,47 @@ export const AdminOverviewTab = ({ railwayCompare }: AdminOverviewTabProps) => {
     }
   };
 
-  // กราฟจำนวนผู้ใช้งานแยกจังหวัด - ใช้โทนสี cohesive นุ่มนวล ไม่ใช่ rainbow
-  const provinceUserData = {
-    labels: ["กทม.", "เชียงใหม่", "ชลบุรี", "นนทบุรี", "ขอนแก่น", "ภูเก็ต"],
-    datasets: [
-      {
-        label: "จำนวนผู้ใช้งาน (คน)",
-        data: [142, 58, 44, 38, 29, 24],
-        backgroundColor: [
-          "#1677ff",
-          "#4096ff",
-          "#69b1ff",
-          "#91caff",
-          "#bae0ff",
-          "#d6e4ff"
-        ],
-        borderRadius: 4
-      }
-    ]
-  };
+  // กราฟสถิติจำนวนแต่ละจังหวัดจาก API (GET /api/food-locations/provinces)
+  const provinceChartData = useMemo(() => {
+    if (provinceStats.length === 0) {
+      return {
+        labels: [],
+        datasets: [
+          {
+            label: "จำนวนรายการ",
+            data: [],
+            backgroundColor: ["#1677ff"],
+            borderRadius: 4
+          }
+        ]
+      };
+    }
+
+    const labels = provinceStats.map((item) => item.province || "ไม่ระบุ");
+    const counts = provinceStats.map((item) => item.count ?? item.location_count ?? 0);
+
+    const baseColors = [
+      "#1677ff",
+      "#4096ff",
+      "#69b1ff",
+      "#91caff",
+      "#bae0ff",
+      "#d6e4ff"
+    ];
+    const backgroundColors = labels.map((_, idx) => baseColors[idx % baseColors.length]);
+
+    return {
+      labels,
+      datasets: [
+        {
+          label: "จำนวนรายการ",
+          data: counts,
+          backgroundColor: backgroundColors,
+          borderRadius: 4
+        }
+      ]
+    };
+  }, [provinceStats]);
 
   const provinceUserOptions = {
     responsive: true,
@@ -371,7 +441,7 @@ export const AdminOverviewTab = ({ railwayCompare }: AdminOverviewTabProps) => {
       legend: { display: false },
       tooltip: {
         callbacks: {
-          label: (context: { raw: unknown }) => ` ${context.raw} คน`
+          label: (context: { raw: unknown }) => ` ${context.raw} รายการ`
         }
       }
     },
@@ -468,31 +538,45 @@ export const AdminOverviewTab = ({ railwayCompare }: AdminOverviewTabProps) => {
                   </div>
                 </div>
                 <div className="admin-overview-summary-row">
-                  <div className="admin-overview-summary-item">
-                    <span className="admin-overview-summary-label">รวม</span>
-                    <span className="admin-overview-summary-val admin-overview-summary-val-highlight">
-                      {chartDataComputed.summary.total.toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="admin-overview-summary-item">
-                    <span className="admin-overview-summary-label">เฉลี่ย</span>
-                    <span className="admin-overview-summary-val">
-                      {chartDataComputed.summary.avg.toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="admin-overview-summary-item">
-                    <span className="admin-overview-summary-label">สูงสุด</span>
-                    <span className="admin-overview-summary-val admin-overview-summary-val-highlight">
-                      {chartDataComputed.summary.peak}
-                    </span>
-                  </div>
+                  {loadingTimeline && metricType === "uploads" ? (
+                    <Skeleton.Input active size="small" style={{ width: 140, height: 20 }} />
+                  ) : (
+                    <>
+                      <div className="admin-overview-summary-item">
+                        <span className="admin-overview-summary-label">รวม</span>
+                        <span className="admin-overview-summary-val admin-overview-summary-val-highlight">
+                          {chartDataComputed.summary.total.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="admin-overview-summary-item">
+                        <span className="admin-overview-summary-label">เฉลี่ย</span>
+                        <span className="admin-overview-summary-val">
+                          {chartDataComputed.summary.avg.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="admin-overview-summary-item">
+                        <span className="admin-overview-summary-label">สูงสุด</span>
+                        <span className="admin-overview-summary-val admin-overview-summary-val-highlight">
+                          {chartDataComputed.summary.peak}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             }
             variant="borderless"
           >
             <div className="admin-overview-chart-wrapper">
-              <Line data={mainChartData} options={mainChartOptions} />
+              {loadingTimeline && metricType === "uploads" ? (
+                <div className="admin-overview-chart-skeleton">
+                  <Skeleton.Node active style={{ width: "100%", height: "100%" }}>
+                    <div />
+                  </Skeleton.Node>
+                </div>
+              ) : (
+                <Line data={mainChartData} options={mainChartOptions} />
+              )}
             </div>
           </Card>
         </Col>
@@ -502,18 +586,45 @@ export const AdminOverviewTab = ({ railwayCompare }: AdminOverviewTabProps) => {
           <Card
             className="admin-overview-chart-card"
             title={
-              <div>
-                <div className="admin-dashboard-card-title">ผู้ใช้งานในแต่ละจังหวัด</div>
-                <div className="admin-overview-chart-sub">
-                  การกระจายตัวตามพิกัดหลัก
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", flexWrap: "wrap", gap: 8 }}>
+                <div>
+                  <div className="admin-dashboard-card-title">ผู้ใช้งานในแต่ละจังหวัด</div>
+                  <div className="admin-overview-chart-sub">
+                    การกระจายตัวตามพิกัดหลัก
+                  </div>
                 </div>
+                <Select
+                  value={selectedProvinceFilter}
+                  onChange={setSelectedProvinceFilter}
+                  size="small"
+                  style={{ minWidth: 130 }}
+                  options={[
+                    { value: "all", label: "ทุกจังหวัด" },
+                    ...availableProvincesList.map((prov) => ({
+                      value: prov,
+                      label: prov
+                    }))
+                  ]}
+                />
               </div>
             }
             variant="borderless"
             styles={{ body: { padding: "12px 14px 16px" } }}
           >
             <div className="admin-overview-chart-wrapper">
-              <Bar data={provinceUserData} options={provinceUserOptions} />
+              {loadingProvinceStats ? (
+                <div className="admin-overview-chart-skeleton">
+                  <Skeleton.Node active style={{ width: "100%", height: "100%" }}>
+                    <div />
+                  </Skeleton.Node>
+                </div>
+              ) : provinceStats.length === 0 ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#94a3b8" }}>
+                  ไม่พบข้อมูลสถิติจังหวัด
+                </div>
+              ) : (
+                <Bar data={provinceChartData} options={provinceUserOptions} />
+              )}
             </div>
           </Card>
         </Col>
@@ -529,8 +640,8 @@ export const AdminOverviewTab = ({ railwayCompare }: AdminOverviewTabProps) => {
             variant="borderless"
             styles={{ body: { padding: "14px 16px" } }}
           >
-            <Row gutter={[12, 12]}>
-              <Col xs={24} md={8}>
+            <Row gutter={[24, 16]} className="admin-dashboard-resources-container">
+              <Col xs={24} md={8} className="admin-dashboard-resource-col">
                 <div className="admin-dashboard-resource-row">
                   <span>CPU Usage</span>
                   <span className="admin-dashboard-resource-val">
@@ -546,7 +657,8 @@ export const AdminOverviewTab = ({ railwayCompare }: AdminOverviewTabProps) => {
                   format={(p) => `${p ?? 0}%`}
                 />
               </Col>
-              <Col xs={24} md={8}>
+              <Divider type="vertical" className="admin-dashboard-resource-divider" />
+              <Col xs={24} md={8} className="admin-dashboard-resource-col">
                 <div className="admin-dashboard-resource-row">
                   <span>Memory (RAM)</span>
                   <span className="admin-dashboard-resource-val">
@@ -562,7 +674,8 @@ export const AdminOverviewTab = ({ railwayCompare }: AdminOverviewTabProps) => {
                   format={(p) => `${p ?? 0}%`}
                 />
               </Col>
-              <Col xs={24} md={8}>
+              <Divider type="vertical" className="admin-dashboard-resource-divider" />
+              <Col xs={24} md={8} className="admin-dashboard-resource-col">
                 <div className="admin-dashboard-resource-row">
                   <span>Storage / Disk</span>
                   <span className="admin-dashboard-resource-val">

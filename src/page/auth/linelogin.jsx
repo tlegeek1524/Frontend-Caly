@@ -1,49 +1,56 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LoadingOverlay from '../../components/Loading/LoadingOverlay';
+import {
+  getStoredUser,
+  verifyAdminStatusFromApi
+} from '../../utils/sessionAuth';
 
 const LineLogin = () => {
   const navigate = useNavigate();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
-  // Auto-login: หากเคยเข้าสู่ระบบแล้ว ให้ข้ามไปหน้าตามสิทธิ์ทันที
+  // Auto-login: หากมี session อยู่แล้ว ให้ซิงก์สิทธิ์ล่าสุดจาก API แล้วส่งไปที่ /dashboard
   useEffect(() => {
-    try {
-      const userStr = localStorage.getItem('user');
-      if (userStr) {
-        const user = JSON.parse(userStr);
-        if (user && user.id) {
-          const rawStatus = (user.is_status || user.status || user.role || '').toString().trim().toUpperCase();
-          const userRoles = Array.isArray(user.roles)
-            ? user.roles.map((r) => String(r).toLowerCase())
-            : typeof user.roles === 'string'
-            ? [user.roles.toLowerCase()]
-            : [];
-          const isAdmin = rawStatus === 'ADMIN' || userRoles.includes('admin') || userRoles.includes('dev');
+    let isMounted = true;
 
-          if (isAdmin) {
-            navigate('/admin-dashboard', { replace: true });
-          } else {
-            navigate('/dashboard', { replace: true });
-          }
+    const checkExistingSession = async () => {
+      try {
+        const storedUser = getStoredUser();
+        const uid = storedUser?.id || storedUser?.line_uid || storedUser?.userId || storedUser?.accountno;
+
+        if (storedUser && uid) {
+          await verifyAdminStatusFromApi();
+          if (!isMounted) return;
+
+          navigate('/dashboard', { replace: true });
           return;
         }
+      } catch (e) {
+        console.error('Error checking user session:', e);
+      } finally {
+        if (isMounted) {
+          setIsCheckingAuth(false);
+        }
       }
-    } catch (e) {
-      console.error('Error parsing user session:', e);
-    } finally {
-      setIsCheckingAuth(false);
-    }
+    };
+
+    checkExistingSession();
+
+    return () => {
+      isMounted = false;
+    };
   }, [navigate]);
   
   const handleLineLogin = () => {
     const channelId = import.meta.env.VITE_LINE_CHANNEL_ID;
-    const callbackUrl = import.meta.env.VITE_LINE_CALLBACK_URL;
+    const origin = window.location.origin;
+    const callbackUrl = import.meta.env.VITE_LINE_CALLBACK_URL || `${origin}/auth/line/callback`;
     const state = Math.random().toString(36).substring(7);
     
     sessionStorage.setItem('line_login_state', state);
+    sessionStorage.setItem('line_login_callback_url', callbackUrl);
     
-    // เพิ่ม email scope เหมือนตัวอย่าง PHP
     const lineAuthUrl = `https://access.line.me/oauth2/v2.1/authorize?response_type=code&client_id=${channelId}&redirect_uri=${encodeURIComponent(callbackUrl)}&state=${state}&scope=profile%20openid%20email`;
     
     window.location.href = lineAuthUrl;

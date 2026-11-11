@@ -29,8 +29,10 @@ const Login = () => {
       displayName: "Admin Caly"
     };
 
-    localStorage.setItem("access_token", "mock-access-token");
-    localStorage.setItem("user", JSON.stringify(mockUser));
+    sessionStorage.setItem("access_token", "mock-access-token");
+    sessionStorage.setItem("user", JSON.stringify(mockUser));
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("user");
     navigate("/admin-dashboard");
   };
 
@@ -49,8 +51,10 @@ const Login = () => {
       const result = await response.json();
 
       if (response.ok && (result.status === 200 || result.status === "200")) {
-        localStorage.setItem("access_token", result.data.access_token);
-        localStorage.setItem("user", JSON.stringify(result.data.user));
+        sessionStorage.setItem("access_token", result.data.access_token);
+        sessionStorage.setItem("user", JSON.stringify(result.data.user));
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("user");
         setSnackbar({ open: true, message: "เข้าสู่ระบบสำเร็จ", severity: "success" });
         setTimeout(() => navigate("/dashboard"), 1000);
       } else {

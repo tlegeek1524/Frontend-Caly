@@ -1,21 +1,24 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Login from "./page/auth/login";
-import Signup from "./page/auth/signup";
-import LineLogin from "./page/auth/linelogin";
-import LineCallback from "./page/auth/linecallback";
-import Regispage from "./page/user/regis/regispage";
-import MainDashboard from "./page/user/dashboard/maindashboard";
-import FoodMenu from "./page/user/dashboard/foodmenu";
-import Profile from "./page/user/profile/profile";
-import Settings from "./page/user/settings/settings";
 import SidebarLayout from "./components/Sidebar/SidebarLayout";
-import AdminDashboard from "./page/admin/index";
 import { ErrorPage } from "./page/error/ErrorPage";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { RoleProtectedRoute } from "./components/RoleProtectedRoute";
 import { AppProvider } from "./context/AppContext";
+import LoadingOverlay from "./components/Loading/LoadingOverlay";
 import { Toaster } from "react-hot-toast";
 import "./App.css";
+
+const Login = lazy(() => import("./page/auth/login"));
+const Signup = lazy(() => import("./page/auth/signup"));
+const LineLogin = lazy(() => import("./page/auth/linelogin"));
+const LineCallback = lazy(() => import("./page/auth/linecallback"));
+const Regispage = lazy(() => import("./page/user/regis/regispage"));
+const MainDashboard = lazy(() => import("./page/user/dashboard/maindashboard"));
+const FoodMenu = lazy(() => import("./page/user/dashboard/foodmenu"));
+const Profile = lazy(() => import("./page/user/profile/profile"));
+const Settings = lazy(() => import("./page/user/settings/settings"));
+const AdminDashboard = lazy(() => import("./page/admin/index"));
 
 function App() {
   return (
@@ -34,37 +37,39 @@ function App() {
               },
             }}
           />
-          <Routes>
-            {/* Public Routes */}
-            <Route path="/" element={<LineLogin />} />
-            <Route path="/linelogin" element={<LineLogin />} />
-            <Route path="/auth/line/callback" element={<LineCallback />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<Signup />} />
-            <Route path="/regis" element={<Regispage />} />
+          <Suspense fallback={<LoadingOverlay show={true} message="กำลังโหลดหน้า..." />}>
+            <Routes>
+              {/* Public Routes */}
+              <Route path="/" element={<LineLogin />} />
+              <Route path="/linelogin" element={<LineLogin />} />
+              <Route path="/auth/line/callback" element={<LineCallback />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<Signup />} />
+              <Route path="/regis" element={<Regispage />} />
 
-            {/* User Routes */}
-            <Route path="/dashboard" element={<MainDashboard />} />
-            <Route path="/foodmenu" element={<FoodMenu />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/settings" element={<Settings />} />
+              {/* User Routes */}
+              <Route path="/dashboard" element={<MainDashboard />} />
+              <Route path="/foodmenu" element={<FoodMenu />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/settings" element={<Settings />} />
 
-            {/* Protected Admin Routes (รองรับ 403 Forbidden เมื่อไม่มีสิทธิ์) */}
-            <Route element={<RoleProtectedRoute allowedRoles={["admin", "dev"]} />}>
-              <Route element={<SidebarLayout />}>
-                <Route path="/admin-dashboard" element={<AdminDashboard />} />
-                <Route path="/admin-dashboard/:tab" element={<AdminDashboard />} />
+              {/* Protected Admin Routes (อนุญาตเฉพาะ ADMIN, DEV, STAFF) */}
+              <Route element={<RoleProtectedRoute allowedRoles={["ADMIN", "DEV", "STAFF"]} />}>
+                <Route element={<SidebarLayout />}>
+                  <Route path="/admin-dashboard" element={<AdminDashboard />} />
+                  <Route path="/admin-dashboard/:tab" element={<AdminDashboard />} />
+                </Route>
               </Route>
-            </Route>
 
-            {/* Explicit Error Routes */}
-            <Route path="/403" element={<ErrorPage type="403" />} />
-            <Route path="/404" element={<ErrorPage type="404" />} />
-            <Route path="/500" element={<ErrorPage type="500" />} />
+              {/* Explicit Error Routes */}
+              <Route path="/403" element={<ErrorPage type="403" />} />
+              <Route path="/404" element={<ErrorPage type="404" />} />
+              <Route path="/500" element={<ErrorPage type="500" />} />
 
-            {/* Catch-all 404 Route */}
-            <Route path="*" element={<ErrorPage type="404" />} />
-          </Routes>
+              {/* Catch-all 404 Route */}
+              <Route path="*" element={<ErrorPage type="404" />} />
+            </Routes>
+          </Suspense>
         </AppProvider>
       </ErrorBoundary>
     </BrowserRouter>

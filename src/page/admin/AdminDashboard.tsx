@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Tabs, message, Form, Modal, Button, Tag } from "antd";
+import { Tabs, message, Modal, Button, Tag, Spin } from "antd";
 import {
   DashboardOutlined,
   EnvironmentOutlined,
@@ -11,46 +11,30 @@ import {
   SafetyCertificateOutlined
 } from "@ant-design/icons";
 
-import type {
-  AdminUser,
-  AuditLogRecord,
-  EventLogRecord,
-  GeoLocationRecord,
-  UserRole,
-  BanUserPayload,
-  RailwayCompareData,
-  DashboardCountResponse
-} from "../../types/admin";
-
-import {
-  fetchAuditLogsService,
-  fetchEventLogsService,
-  fetchAllUsersService,
-  updateRoleService,
-  banUserService,
-  fetchRailwayCompareService,
-  fetchDashboardCountService
-} from "../../services/adminService";
-
-import geoLocationsData from "../../data/mock/geoLocations.json";
-
-import { AdminStatCards } from "./components/AdminStatCards";
-import { AdminLogDetailModal, AdminBanUserModal } from "./components/AdminModals";
-import {
-  OverviewTab,
-  GeoLocationTab,
-  UserManagementTab,
-  AuditLogsTab,
-  EventLogsTab,
-  ProfileTab
-} from "./tabs";
+const OverviewTab = lazy(() =>
+  import("./tabs/overview").then((m) => ({ default: m.OverviewTab }))
+);
+const GeoLocationTab = lazy(() =>
+  import("./tabs/geoLocation").then((m) => ({ default: m.GeoLocationTab }))
+);
+const UserManagementTab = lazy(() =>
+  import("./tabs/userManagement").then((m) => ({ default: m.UserManagementTab }))
+);
+const AuditLogsTab = lazy(() =>
+  import("./tabs/auditLogs").then((m) => ({ default: m.AuditLogsTab }))
+);
+const EventLogsTab = lazy(() =>
+  import("./tabs/eventLogs").then((m) => ({ default: m.EventLogsTab }))
+);
+const ProfileTab = lazy(() =>
+  import("./tabs/profile").then((m) => ({ default: m.ProfileTab }))
+);
 import { AdminHeader } from "../../components/AdminHeader";
 import { useApp } from "../../context/AppContext";
+import { getStoredUser, clearStoredAuth } from "../../utils/sessionAuth";
 
 import "./components/AdminBottomNav.css";
 import "./AdminDashboard.css";
-
-const MOCK_GEO_LOCATIONS: GeoLocationRecord[] = geoLocationsData as GeoLocationRecord[];
 
 const ADMIN_NAV_ITEMS = [
   { key: "overview", label: "ภาพรวม", icon: <DashboardOutlined /> },
@@ -76,7 +60,6 @@ export const AdminDashboard = () => {
     return false;
   });
 
-  // ซิงก์ activeTab กับ URL param (:tab)
   const activeTab = tab && VALID_TABS.includes(tab) ? tab : "overview";
 
   const handleTabChange = (newTab: string) => {
@@ -85,10 +68,18 @@ export const AdminDashboard = () => {
   };
 
   useEffect(() => {
+    try {
+      const user = getStoredUser();
+      if (user) {
+        setCurrentUser(user);
+      }
+    } catch {
+      // ignore parse error
+    }
+
     const handleResize = () => {
       const mobile = window.innerWidth <= 768;
       setIsMobile(mobile);
-      // หากออกจากขนาด device mobile แล้วแท็บปัจจุบันเป็น profile ให้รีเซ็ตกลับเป็น overview
       if (!mobile && activeTab === "profile") {
         navigate("/admin-dashboard/overview", { replace: true });
       }
@@ -97,257 +88,17 @@ export const AdminDashboard = () => {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, [activeTab, navigate]);
-  const [logs, setLogs] = useState<AuditLogRecord[]>([]);
-  const [eventLogs, setEventLogs] = useState<EventLogRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isEventLogsLoading, setIsEventLogsLoading] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isUsersLoading, setIsUsersLoading] = useState(false);
-
-  const [selectedLog, setSelectedLog] = useState<AuditLogRecord | null>(null);
-  const [allUsers, setAllUsers] = useState<AdminUser[]>([]);
-  const [userSearchQuery, setUserSearchQuery] = useState("");
-  const [tempRoles, setTempRoles] = useState<Record<string, UserRole>>({});
-
-  const [banDialogOpen, setBanDialogOpen] = useState(false);
-  const [banForm] = Form.useForm<BanUserPayload>();
-
-  const [searchLogQuery, setSearchLogQuery] = useState("");
-  const [selectedPhotoLocation, setSelectedPhotoLocation] = useState<GeoLocationRecord | null>(null);
-  const [railwayCompare, setRailwayCompare] = useState<RailwayCompareData | null>(null);
-  const [dashboardCounts, setDashboardCounts] = useState<DashboardCountResponse | null>(null);
-
-  const loadRailwayCompare = async (): Promise<number | undefined> => {
-    const res = await fetchRailwayCompareService();
-    if (res.success && res.data) {
-      setRailwayCompare(res.data);
-    }
-    return res.serverTimeMs;
-  };
-
-  const loadDashboardCounts = async () => {
-    const res = await fetchDashboardCountService();
-    if (res.success && res.data) {
-      setDashboardCounts(res.data);
-    }
-  };
-
-  const loadAuditLogs = async (notify = false) => {
-    setIsLoading(true);
-    const data = await fetchAuditLogsService();
-    setLogs(data);
-    setIsLoading(false);
-    if (notify) message.success("อัปเดตบันทึกกิจกรรมเรียบร้อยแล้ว");
-  };
-
-  const loadEventLogs = async () => {
-    setIsEventLogsLoading(true);
-    const data = await fetchEventLogsService();
-    setEventLogs(data);
-    setIsEventLogsLoading(false);
-  };
-
-  const loadUsersList = async () => {
-    setIsUsersLoading(true);
-    const users = await fetchAllUsersService();
-    setAllUsers(users);
-
-    const initialTempRoles: Record<string, UserRole> = {};
-    users.forEach((usr) => {
-      const hasDev = Array.isArray(usr.roles)
-        ? usr.roles.includes("dev")
-        : usr.roles === "dev";
-      initialTempRoles[usr.accountno] = hasDev ? "dev" : "user";
-    });
-    setTempRoles(initialTempRoles);
-    setIsUsersLoading(false);
-  };
-
-  const handleChangeRole = (accountno: string, newRole: UserRole) => {
-    setTempRoles((prev) => ({
-      ...prev,
-      [accountno]: newRole
-    }));
-  };
-
-  const handleSaveRoles = async () => {
-    setIsProcessing(true);
-    const changedUsers: { accountno: string; roles: UserRole[] }[] = [];
-    allUsers.forEach((usr) => {
-      const originalIsDev = Array.isArray(usr.roles)
-        ? usr.roles.includes("dev")
-        : usr.roles === "dev";
-      const currentIsDev = tempRoles[usr.accountno] === "dev";
-      if (originalIsDev !== currentIsDev) {
-        changedUsers.push({
-          accountno: usr.accountno,
-          roles: currentIsDev ? ["user", "dev"] : ["user"]
-        });
-      }
-    });
-
-    if (changedUsers.length === 0) {
-      message.info("ไม่มีการเปลี่ยนแปลงสิทธิ์");
-      setIsProcessing(false);
-      return;
-    }
-
-    let successCount = 0;
-    for (const item of changedUsers) {
-      const ok = await updateRoleService(item);
-      if (ok) successCount++;
-    }
-
-    if (successCount > 0) {
-      message.success(`บันทึกสิทธิ์ผู้ใช้สำเร็จ ${successCount} รายการ`);
-      loadUsersList();
-      loadAuditLogs();
-    } else {
-      message.error("บันทึกสิทธิ์ผู้ใช้งานล้มเหลว");
-    }
-    setIsProcessing(false);
-  };
-
-  const handleBanUserSubmit = async (values: BanUserPayload) => {
-    setIsProcessing(true);
-    const result = await banUserService(values);
-    if (result.success) {
-      message.success(result.message);
-      setBanDialogOpen(false);
-      banForm.resetFields();
-      setAllUsers((prev) =>
-        prev.map((u) => (u.accountno === values.accountno ? { ...u, is_banned: true } : u))
-      );
-      loadAuditLogs();
-    } else {
-      message.error(result.message);
-    }
-    setIsProcessing(false);
-  };
-
-  const handleToggleLockUser = (accountno: string, currentlyBanned: boolean) => {
-    if (currentlyBanned) {
-      setAllUsers((prev) =>
-        prev.map((u) => (u.accountno === accountno ? { ...u, is_banned: false } : u))
-      );
-      message.success("ปลดล็อคผู้ใช้งานเรียบร้อยแล้ว");
-    } else {
-      banForm.setFieldsValue({ accountno });
-      setBanDialogOpen(true);
-    }
-  };
-
-  const handleExportCSV = (dataType: string) => {
-    let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-    const filename = `caly_export_${dataType}_${new Date().toISOString().slice(0, 10)}.csv`;
-
-    if (dataType === "users") {
-      csvContent += "Account No,Full Name,Username,Email,Roles\n";
-      allUsers.forEach((u) => {
-        csvContent += `"${u.accountno || ""}","${u.full_name || ""}","${u.username || ""}","${u.email || ""}","${Array.isArray(u.roles) ? u.roles.join(";") : u.roles || ""}"\n`;
-      });
-    } else if (dataType === "geo") {
-      csvContent += "ID,User Name,Food Name,Calories,Latitude,Longitude,Location,Timestamp\n";
-      MOCK_GEO_LOCATIONS.forEach((g) => {
-        csvContent += `"${g.id}","${g.userName}","${g.foodName}",${g.calories},${g.latitude},${g.longitude},"${g.locationName}","${g.timestamp}"\n`;
-      });
-    } else if (dataType === "event-logs") {
-      csvContent += "Event ID,Timestamp,Category,Action,Detail,Level,Operator,IP Address\n";
-      eventLogs.forEach((e) => {
-        csvContent += `"${e.event_id}","${e.timestamp}","${e.category}","${e.action}","${e.detail}","${e.level}","${e.operator}","${e.ip_address}"\n`;
-      });
-    } else {
-      csvContent += "Record ID,Operator,Username,IP Address,Timestamp,Active Status\n";
-      logs.forEach((l) => {
-        csvContent += `"${l.record_id}","${l.user_detail?.full_name || ""}","${l.decoded_sessions?.username || ""}","${l.ip_address || ""}","${l.created_at || ""}","${l.is_active ? "Active" : "Expired"}"\n`;
-      });
-    }
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    message.success(`ส่งออกไฟล์ ${filename} เรียบร้อยแล้ว`);
-  };
-
-  useEffect(() => {
-    let isMounted = true;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    const FIVE_MINUTES_MS = 5 * 60 * 1000;
-
-    try {
-      const userStr = localStorage.getItem("user");
-      if (userStr) {
-        setCurrentUser(JSON.parse(userStr));
-      }
-    } catch {
-      // ignore JSON parse error
-    }
-    loadAuditLogs();
-    loadEventLogs();
-    loadUsersList();
-
-    const syncByServerTime = async () => {
-      const [serverTimeMs] = await Promise.all([
-        loadRailwayCompare(),
-        loadDashboardCounts()
-      ]);
-
-      if (!isMounted) return;
-
-      // คำนวณเวลาที่เหลือจนถึงรอบ 5 นาทีถัดไปของเวลา Server (เช่น :00, :05, :10, :15 ...)
-      const delayMs = serverTimeMs
-        ? FIVE_MINUTES_MS - (serverTimeMs % FIVE_MINUTES_MS)
-        : FIVE_MINUTES_MS;
-
-      timeoutId = setTimeout(syncByServerTime, Math.max(1000, delayMs));
-    };
-
-    syncByServerTime();
-
-    return () => {
-      isMounted = false;
-      if (timeoutId) clearTimeout(timeoutId);
-    };
-  }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem("user");
-    localStorage.removeItem("access_token");
+    clearStoredAuth();
     sessionStorage.clear();
     message.success("ออกจากระบบเรียบร้อยแล้ว");
     navigate("/linelogin", { replace: true });
   };
 
-  const filteredLogs = logs.filter((log) => {
-    if (!searchLogQuery) return true;
-    const query = searchLogQuery.toLowerCase();
-    const name = (log.user_detail?.full_name || "").toLowerCase();
-    const uname = (log.decoded_sessions?.username || "").toLowerCase();
-    const ip = (log.ip_address || "").toLowerCase();
-    return name.includes(query) || uname.includes(query) || ip.includes(query);
-  });
-
-  const filteredUsers = allUsers.filter((usr) => {
-    const query = userSearchQuery.toLowerCase();
-    const fullName = (usr.full_name || "").toLowerCase();
-    const username = (usr.username || "").toLowerCase();
-    const email = (usr.email || "").toLowerCase();
-    const accountno = (usr.accountno || "").toLowerCase();
-    return (
-      fullName.includes(query) ||
-      username.includes(query) ||
-      email.includes(query) ||
-      accountno.includes(query)
-    );
-  });
-
   return (
     <div className="admin-dashboard">
-      {/* Quiet, Natural Page Header (Shared Component) */}
+      {/* Shared Admin Header */}
       <AdminHeader
         title="Dashboard"
         currentUser={currentUser}
@@ -362,22 +113,6 @@ export const AdminDashboard = () => {
         onLogoutClick={() => setIsLogoutModalOpen(true)}
       />
 
-      {/* Top 4 Stat Cards ย้ายขึ้นบนสุด (ซ่อนเมื่ออยู่ในหน้าโปรไฟล์) */}
-      {activeTab !== "profile" && (
-        <AdminStatCards
-          totalUsers={dashboardCounts?.User?.count ?? 0}
-          totalPhotos={dashboardCounts?.Image_food?.count ?? 0}
-          storageUsage={railwayCompare?.databaseStorage?.used ?? "-"}
-          storageMax={railwayCompare?.databaseStorage?.max ?? "-"}
-          serverLoad={
-            railwayCompare?.cpuUsage?.usagePercent !== undefined
-              ? `${railwayCompare.cpuUsage.usagePercent}%`
-              : "-"
-          }
-          serverLoadMax={railwayCompare?.cpuUsage ? "100%" : "-"}
-        />
-      )}
-
       {/* Tabs Menu */}
       <Tabs
         activeKey={activeTab}
@@ -385,82 +120,67 @@ export const AdminDashboard = () => {
         type="line"
         className="admin-dashboard-tabs"
         animated={{ inkBar: true, tabPane: true }}
-        destroyOnHidden={false}
+        destroyInactiveTabPane={true}
         items={[
           {
             key: "overview",
             label: <span><DashboardOutlined /> {t("admin.overviewTitle")}</span>,
-            children: <OverviewTab railwayCompare={railwayCompare} />
+            children: (
+              <Suspense fallback={<div style={{ padding: "40px 0", textAlign: "center" }}><Spin size="large" /></div>}>
+                {activeTab === "overview" && <OverviewTab isMobile={isMobile} />}
+              </Suspense>
+            )
           },
           {
             key: "geo",
             label: <span><EnvironmentOutlined /> {t("admin.geoTitle")}</span>,
             children: (
-              <GeoLocationTab
-                locations={MOCK_GEO_LOCATIONS}
-                selectedLocation={selectedPhotoLocation}
-                onSelectLocation={setSelectedPhotoLocation}
-              />
+              <Suspense fallback={<div style={{ padding: "40px 0", textAlign: "center" }}><Spin size="large" /></div>}>
+                {activeTab === "geo" && <GeoLocationTab />}
+              </Suspense>
             )
           },
           {
             key: "users",
             label: <span><SafetyCertificateOutlined /> {t("admin.userMgmtTitle")}</span>,
             children: (
-              <UserManagementTab
-                users={filteredUsers}
-                isLoading={isUsersLoading}
-                isSaving={isProcessing}
-                searchQuery={userSearchQuery}
-                onSearchChange={setUserSearchQuery}
-                tempRoles={tempRoles}
-                onChangeRole={handleChangeRole}
-                onSaveRoles={handleSaveRoles}
-                onOpenBanDialog={(accountno) => {
-                  banForm.setFieldsValue({ accountno });
-                  setBanDialogOpen(true);
-                }}
-                onToggleLockUser={handleToggleLockUser}
-                onExportCSV={() => handleExportCSV("users")}
-              />
+              <Suspense fallback={<div style={{ padding: "40px 0", textAlign: "center" }}><Spin size="large" /></div>}>
+                {activeTab === "users" && <UserManagementTab />}
+              </Suspense>
             )
           },
           {
             key: "audit-logs",
             label: <span><FieldTimeOutlined /> {t("admin.auditLogsTitle")}</span>,
             children: (
-              <AuditLogsTab
-                logs={filteredLogs}
-                isLoading={isLoading}
-                searchQuery={searchLogQuery}
-                onSearchChange={setSearchLogQuery}
-                onSelectLog={setSelectedLog}
-                onExportCSV={() => handleExportCSV("logs")}
-              />
+              <Suspense fallback={<div style={{ padding: "40px 0", textAlign: "center" }}><Spin size="large" /></div>}>
+                {activeTab === "audit-logs" && <AuditLogsTab />}
+              </Suspense>
             )
           },
           {
             key: "event-logs",
             label: <span><HistoryOutlined /> {t("admin.eventLogsTitle")}</span>,
             children: (
-              <EventLogsTab
-                eventLogs={eventLogs}
-                loading={isEventLogsLoading}
-                onExportCSV={() => handleExportCSV("event-logs")}
-              />
+              <Suspense fallback={<div style={{ padding: "40px 0", textAlign: "center" }}><Spin size="large" /></div>}>
+                {activeTab === "event-logs" && <EventLogsTab />}
+              </Suspense>
             )
           },
-          // ซ่อนแท็บโปรไฟล์ออกจากแถบแท็บเมื่อขนาดหน้าจอออกจาก device mobile
           ...(isMobile
             ? [
                 {
                   key: "profile",
                   label: <span><UserOutlined /> {t("admin.profile")}</span>,
                   children: (
-                    <ProfileTab
-                      currentUser={currentUser}
-                      onLogoutClick={() => setIsLogoutModalOpen(true)}
-                    />
+                    <Suspense fallback={<div style={{ padding: "40px 0", textAlign: "center" }}><Spin size="large" /></div>}>
+                      {activeTab === "profile" && (
+                        <ProfileTab
+                          currentUser={currentUser}
+                          onLogoutClick={() => setIsLogoutModalOpen(true)}
+                        />
+                      )}
+                    </Suspense>
                   )
                 }
               ]
@@ -468,20 +188,7 @@ export const AdminDashboard = () => {
         ]}
       />
 
-      {/* Detail & Ban Modals */}
-      <AdminLogDetailModal log={selectedLog} onClose={() => setSelectedLog(null)} />
-      <AdminBanUserModal
-        open={banDialogOpen}
-        form={banForm}
-        isProcessing={isProcessing}
-        onCancel={() => {
-          setBanDialogOpen(false);
-          banForm.resetFields();
-        }}
-        onSubmit={handleBanUserSubmit}
-      />
-
-      {/* Desktop Profile Modal (แสดงเฉพาะเมื่อคลิกโปรไฟล์บนหน้าจอคอมพิวเตอร์/นอกเหนือจาก mobile) */}
+      {/* Desktop Profile Modal */}
       {!isMobile && (
         <Modal
           title={

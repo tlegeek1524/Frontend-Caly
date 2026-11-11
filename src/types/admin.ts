@@ -1,12 +1,36 @@
-export type UserRole = "admin" | "dev" | "user";
+export type UserRole = "admin" | "dev" | "staff" | "user" | string;
+
+export type RoleDropdownItem = {
+  id: number;
+  role: string;
+  priority: number;
+};
+
+export type RoleDropdownResponse = {
+  status: string;
+  total?: number;
+  data: RoleDropdownItem[];
+};
 
 export type AdminUser = {
   accountno: string;
+  line_uid?: string;
   full_name?: string;
   username?: string;
+  display_name?: string | null;
   email?: string;
   roles?: UserRole[] | UserRole;
+  is_status?: string;
+  gender?: "male" | "female" | string;
+  age?: number;
+  weight?: number;
+  height?: number;
+  activity_level?: string;
+  goal?: string;
+  cal?: number;
   is_banned?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
 };
 
 export type AuditLogRecord = {
@@ -36,16 +60,100 @@ export type EventLogRecord = {
   ip_address: string;
 };
 
+export type FoodLocationMenuItem = {
+  id: number;
+  menu: string;
+  cal: number;
+  protein: number;
+  carb: number;
+  fat: number;
+  image_url: string;
+  date: string;
+};
+
+export type FoodLocationItem = {
+  id: number;
+  line_uid: string;
+  locat_ref_id: string;
+  location_name: string | null;
+  latitude: string | number;
+  longitude: string | number;
+  address: string | null;
+  subdistrict: string | null;
+  district: string | null;
+  province: string | null;
+  postal_code: string | null;
+  country: string | null;
+  country_code: string | null;
+  map_provider: string | null;
+  provider_place_id: string | null;
+  map_url: string | null;
+  map_zoom: number | null;
+  location_type: string | null;
+  description: string | null;
+  phone: string | null;
+  website: string | null;
+  accuracy_m: string | number | null;
+  source_type: string | null;
+  provider_data: Record<string, unknown>;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  menu_count: number;
+  menus: FoodLocationMenuItem[];
+};
+
+export type FoodLocationPagination = {
+  total: number;
+  total_records?: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrevious: boolean;
+};
+
+export type ProvinceStatisticItem = {
+  province: string;
+  count: number;
+  location_count: number;
+};
+
+export type ProvinceStatisticResponse = {
+  status: string;
+  message?: string;
+  data: ProvinceStatisticItem[];
+  pagination?: FoodLocationPagination;
+};
+
+export type FoodLocationsApiResponse = {
+  status: string;
+  message?: string;
+  data: FoodLocationItem[];
+  pagination?: FoodLocationPagination;
+};
+
 export type GeoLocationRecord = {
   id: string;
+  locationId?: number;
+  locatRefId?: string;
+  lineUid?: string;
   userName: string;
   accountno: string;
   foodName: string;
   calories: number;
+  protein?: number;
+  carb?: number;
+  fat?: number;
   imageUrl: string;
   latitude: number;
   longitude: number;
   locationName: string;
+  address?: string;
+  subdistrict?: string;
+  district?: string;
+  province?: string;
+  postalCode?: string;
   timestamp: string;
 };
 
@@ -56,8 +164,10 @@ export type BanUserPayload = {
 };
 
 export type UpdateRolePayload = {
-  accountno: string;
-  roles: UserRole[];
+  accountno?: string;
+  line_uid?: string;
+  roles?: UserRole[];
+  is_status?: string;
 };
 
 export type RailwayCompareData = {

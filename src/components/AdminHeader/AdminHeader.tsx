@@ -1,6 +1,7 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import { UserOutlined, LogoutOutlined } from "@ant-design/icons";
-import { Sun, Moon, Globe } from "lucide-react";
+import { Sun, Moon, Globe, ExternalLink } from "lucide-react";
 import { useApp } from "../../context/AppContext";
 import "./AdminHeader.css";
 
@@ -17,6 +18,7 @@ export const AdminHeader = ({
   onProfileClick,
   onLogoutClick
 }: AdminHeaderProps) => {
+  const navigate = useNavigate();
   const { theme, toggleTheme, language, toggleLanguage, t } = useApp();
 
   const displayName = String(
@@ -32,6 +34,17 @@ export const AdminHeader = ({
       <h1 className="admin-page-title">{title}</h1>
 
       <div className="admin-page-header-actions">
+        {/* User View Redirect Button */}
+        <button
+          type="button"
+          onClick={() => navigate("/dashboard")}
+          className="admin-header-user-view-btn"
+          title="ไปหน้า User Dashboard"
+        >
+          <ExternalLink size={14} />
+          <span>หน้า User</span>
+        </button>
+
         {/* Language Switcher Button (TH / EN) */}
         <button
           type="button"

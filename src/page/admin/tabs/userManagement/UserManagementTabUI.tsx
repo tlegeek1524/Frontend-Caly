@@ -1,10 +1,11 @@
 import { Card, Table, Tag, Button, Input, Space, Tooltip, Select } from "antd";
 import { SearchOutlined, DownloadOutlined, LockOutlined, UnlockOutlined, UserOutlined } from "@ant-design/icons";
-import type { AdminUser, UserRole } from "../../../types/admin";
-import { AdminFilterBar } from "../components/AdminFilterBar";
+import type { AdminUser, RoleDropdownItem, UserRole } from "../../../../types/admin";
+import { AdminFilterBar } from "../../components/AdminFilterBar";
 
 type AdminUserManagementTabProps = {
   users: AdminUser[];
+  roleOptions: RoleDropdownItem[];
   isLoading: boolean;
   isSaving: boolean;
   searchQuery: string;
@@ -17,8 +18,24 @@ type AdminUserManagementTabProps = {
   onExportCSV?: () => void;
 };
 
-export const AdminUserManagementTab = ({
+const getRoleTagColor = (roleStr: string) => {
+  switch (roleStr.toUpperCase()) {
+    case "ADMIN":
+      return "blue";
+    case "DEV":
+      return "purple";
+    case "STAFF":
+      return "cyan";
+    case "USER":
+      return "default";
+    default:
+      return "geekblue";
+  }
+};
+
+export const UserManagementTabUI = ({
   users,
+  roleOptions,
   isLoading,
   isSaving,
   searchQuery,
@@ -30,59 +47,75 @@ export const AdminUserManagementTab = ({
   onToggleLockUser,
   onExportCSV
 }: AdminUserManagementTabProps) => {
+  const selectOptions = roleOptions.map((item) => ({
+    value: item.role.toUpperCase(),
+    label: (
+      <Tag color={getRoleTagColor(item.role)} style={{ margin: 0, fontWeight: 500 }}>
+        {item.role.toUpperCase()}
+      </Tag>
+    )
+  }));
+
   const columns = [
     {
-      title: "ผู้ใช้งาน",
-      dataIndex: "full_name",
-      key: "full_name",
-      render: (text: string | undefined, record: AdminUser) => (
-        <div>
-          <div style={{ fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
-            {text || record.username}
-            {record.is_banned && (
-              <Tag color="error" style={{ fontSize: 10, lineHeight: "16px", padding: "0 4px" }}>
-                ถูกระงับ
-              </Tag>
-            )}
+      title: "ผู้ใช้งาน / LINE UID",
+      key: "user_info",
+      render: (_: unknown, record: AdminUser) => {
+        const displayName = record.display_name || record.full_name || record.username || "ผู้ใช้งาน";
+        const uid = record.line_uid || record.accountno || "";
+        return (
+          <div>
+            <div style={{ fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
+              <UserOutlined style={{ color: "#9ca3af", fontSize: 13 }} />
+              <span>{displayName}</span>
+              {record.is_banned && (
+                <Tag color="error" style={{ fontSize: 10, lineHeight: "16px", padding: "0 4px" }}>
+                  ถูกระงับ
+                </Tag>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: "#8c8c8c", marginTop: 2 }}>
+              <Tooltip title={uid}>
+                <span className="admin-dashboard-account-code" style={{ maxWidth: 280, display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", verticalAlign: "bottom" }}>
+                  {uid}
+                </span>
+              </Tooltip>
+            </div>
           </div>
-          <div style={{ fontSize: 11, color: "#8c8c8c" }}>{record.email || "ไม่มีอีเมล"}</div>
-        </div>
-      )
+        );
+      }
     },
     {
-      title: "เลขบัญชี",
-      dataIndex: "accountno",
-      key: "accountno",
-      width: 110,
-      render: (text: string) => <span className="admin-dashboard-account-code">{text || "—"}</span>
-    },
-    {
-      title: "บทบาท",
+      title: "สถานะ / สิทธิ์",
       key: "role",
-      width: 100,
+      width: 150,
       align: "center" as const,
       render: (_: unknown, record: AdminUser) => {
-        const currentRole = tempRoles[record.accountno] || "user";
         const isMasterAdmin =
           record.accountno === "CALY001" ||
           record.accountno === "ACC-001" ||
-          (Array.isArray(record.roles) ? record.roles.includes("admin") : record.roles === "admin");
+          record.line_uid === "mock-admin-1";
 
         if (isMasterAdmin) {
-          return <Tag color="green">Admin</Tag>;
+          return (
+            <Tag color="blue" style={{ fontWeight: 600 }}>
+              ADMIN
+            </Tag>
+          );
         }
+
+        const currentRole = (tempRoles[record.accountno] || record.is_status || "USER").toUpperCase();
 
         return (
           <Select
             size="small"
             variant="borderless"
+            suffixIcon={null}
             value={currentRole}
             onChange={(val) => onChangeRole(record.accountno, val)}
             className="admin-role-select-borderless"
-            options={[
-              { value: "user", label: "User" },
-              { value: "dev", label: "Dev" }
-            ]}
+            popupMatchSelectWidth={false}
+            options={selectOptions}
           />
         );
       }
@@ -90,13 +123,13 @@ export const AdminUserManagementTab = ({
     {
       title: "จัดการบัญชี",
       key: "actions",
-      width: 110,
+      width: 120,
       align: "center" as const,
       render: (_: unknown, record: AdminUser) => {
         const isMasterAdmin =
           record.accountno === "CALY001" ||
           record.accountno === "ACC-001" ||
-          (Array.isArray(record.roles) ? record.roles.includes("admin") : record.roles === "admin");
+          record.line_uid === "mock-admin-1";
 
         if (isMasterAdmin) {
           return (
@@ -143,7 +176,7 @@ export const AdminUserManagementTab = ({
           <>
             <Input
               prefix={<SearchOutlined style={{ color: "#9ca3af" }} />}
-              placeholder="ค้นหาชื่อ, อีเมล หรือเลขบัญชี..."
+              placeholder="ค้นหาชื่อ หรือ LINE UID..."
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
               className="admin-dashboard-search-input"
@@ -173,7 +206,7 @@ export const AdminUserManagementTab = ({
         <Table
           dataSource={users}
           columns={columns}
-          rowKey={(record) => record.accountno || record.email || ""}
+          rowKey={(record) => record.accountno || record.line_uid || record.email || ""}
           loading={isLoading}
           pagination={{ pageSize: 8, responsive: true }}
           size="small"

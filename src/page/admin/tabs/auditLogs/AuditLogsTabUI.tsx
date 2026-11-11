@@ -1,9 +1,9 @@
 import { Card, Table, Tag, Input, Button } from "antd";
 import { SearchOutlined, DownloadOutlined } from "@ant-design/icons";
-import type { AuditLogRecord } from "../../../types/admin";
-import { AdminFilterBar } from "../components/AdminFilterBar";
+import type { AuditLogRecord } from "../../../../types/admin";
+import { AdminFilterBar } from "../../components/AdminFilterBar";
 
-type AdminAuditLogsTabProps = {
+type AuditLogsTabProps = {
   logs: AuditLogRecord[];
   isLoading: boolean;
   searchQuery: string;
@@ -12,14 +12,14 @@ type AdminAuditLogsTabProps = {
   onExportCSV?: () => void;
 };
 
-export const AdminAuditLogsTab = ({
+export const AuditLogsTab = ({
   logs,
   isLoading,
   searchQuery,
   onSearchChange,
   onSelectLog,
   onExportCSV
-}: AdminAuditLogsTabProps) => {
+}: AuditLogsTabProps) => {
   const columns = [
     {
       title: "ผู้ดำเนินการ",

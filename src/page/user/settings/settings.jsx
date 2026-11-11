@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, AlertTriangle, X } from 'lucide-react';
+import { LogOut, ChevronRight, User } from 'lucide-react';
 import BottomNav from '../../../components/BottomNav/BottomNav';
+import UserHeader from '../../../components/UserHeader/UserHeader';
+import { getStoredUser, clearStoredAuth } from '../../../utils/sessionAuth';
 
 const Settings = () => {
   const navigate = useNavigate();
@@ -9,17 +11,18 @@ const Settings = () => {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   useEffect(() => {
-    const userStr = localStorage.getItem('user');
-    if (userStr) {
-      setUser(JSON.parse(userStr));
+    const storedUser = getStoredUser();
+    if (storedUser) {
+      setUser(storedUser);
     } else {
       navigate('/linelogin');
     }
   }, [navigate]);
 
   const confirmLogout = () => {
-    localStorage.removeItem('user');
-    navigate('/linelogin');
+    clearStoredAuth();
+    sessionStorage.clear();
+    navigate('/linelogin', { replace: true });
   };
 
   const handleOpenCamera = () => {
@@ -29,89 +32,100 @@ const Settings = () => {
   if (!user) return null;
 
   return (
-    <div 
-      className="min-h-screen bg-[#f2f2f7] pb-20" 
-      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}
-    >
-      {/* Navbar */}
-      <div className="bg-gradient-to-r from-green-400 to-emerald-500 px-4 py-6 shadow-sm">
-        <div className="max-w-md mx-auto">
-          <h1 className="text-[28px] font-bold text-white tracking-tight">
-            Calories Daily
-          </h1>
-        </div>
-      </div>
+    <div className="min-h-screen bg-slate-50 pb-24 text-slate-800">
+      {/* Header */}
+      <UserHeader title="ตั้งค่า" subtitle="จัดการบัญชีและการตั้งค่าแอป" />
 
-      <div className="max-w-md mx-auto px-4 py-6 space-y-4">
+      <main className="max-w-md mx-auto px-4 py-5 space-y-4">
+        {/* Profile Card Preview */}
+        <div className="bg-white rounded-2xl p-4 border border-slate-100/80 shadow-xs flex items-center gap-3.5">
+          {user.picture ? (
+            <img
+              src={user.picture}
+              alt="Profile"
+              className="w-12 h-12 rounded-full object-cover border border-slate-100"
+            />
+          ) : (
+            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
+              <User className="w-6 h-6" />
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm font-semibold text-slate-900 truncate">
+              {user.name || 'ผู้ใช้งาน'}
+            </h3>
+            <p className="text-xs text-slate-400 truncate">
+              LINE UID: {user.id}
+            </p>
+          </div>
+        </div>
+
         {/* Account Section */}
-        <div className="bg-white rounded-[12px] overflow-hidden shadow-sm">
-          <div className="px-4 py-3 bg-[#f2f2f7] border-b border-[#e5e5ea]">
-            <h5 className="text-[13px] font-semibold text-[#8e8e93] uppercase">บัญชี</h5>
+        <div className="bg-white rounded-2xl overflow-hidden border border-slate-100/80 shadow-xs">
+          <div className="px-4 py-2.5 bg-slate-50/50 border-b border-slate-100">
+            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+              ข้อมูลส่วนตัว
+            </span>
           </div>
           <button 
             onClick={() => navigate('/regis')}
-            className="w-full px-4 py-4 flex items-center justify-between hover:bg-[#f9f9f9] active:bg-[#f2f2f7] transition-colors"
+            className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors"
           >
             <div className="flex items-center gap-3">
-              <svg className="w-5 h-5 text-[#8e8e93]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-              <span className="text-[15px] text-black">แก้ไขข้อมูล</span>
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <User className="w-4 h-4" />
+              </div>
+              <span className="text-sm font-medium text-slate-800">แก้ไขข้อมูลส่วนตัว / คำนวณ TDEE</span>
             </div>
-            <svg className="w-5 h-5 text-[#8e8e93]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
+            <ChevronRight className="w-4 h-4 text-slate-400" />
           </button>
         </div>
 
         {/* Logout Button */}
         <button
           onClick={() => setShowLogoutModal(true)}
-          className="w-full bg-white rounded-[12px] p-4 shadow-sm hover:bg-red-50 active:bg-red-100 transition-all flex items-center justify-center gap-2 border border-transparent hover:border-red-100"
+          className="w-full bg-white rounded-2xl p-3.5 border border-rose-100/70 shadow-xs hover:bg-rose-50/40 active:bg-rose-50 transition-colors flex items-center justify-center gap-2 group"
         >
-          <LogOut className="w-5 h-5 text-red-500" />
-          <span className="text-[17px] font-semibold text-red-500">ออกจากระบบ</span>
+          <LogOut className="w-4 h-4 text-rose-500 group-hover:translate-x-0.5 transition-transform" />
+          <span className="text-sm font-semibold text-rose-600">ออกจากระบบ</span>
         </button>
 
         {/* Version */}
-        <div className="text-center py-4">
-          <p className="text-[13px] text-[#8e8e93]">Calories Daily v2.4</p>
+        <div className="text-center pt-4">
+          <p className="text-xs text-slate-400">Calories Daily v2.4</p>
         </div>
-      </div>
+      </main>
 
-      {/* Tailwind Logout Modal */}
+      {/* Logout Modal */}
       {showLogoutModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/40 backdrop-blur-sm animate-fadeIn">
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-900/40 backdrop-blur-xs animate-fadeIn">
           <div 
-            className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6 text-center transform transition-all animate-slideUp border border-slate-100"
+            className="w-full max-w-xs bg-white rounded-2xl shadow-xl p-5 text-center border border-slate-100 animate-slideUp"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Icon */}
-            <div className="w-14 h-14 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-red-50/50">
-              <LogOut className="w-7 h-7 stroke-[2.2]" />
+            <div className="w-12 h-12 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-3">
+              <LogOut className="w-5 h-5" />
             </div>
 
-            {/* Title & Desc */}
-            <h3 className="text-[19px] font-bold text-slate-900 mb-1.5">
+            <h3 className="text-base font-bold text-slate-900 mb-1">
               ยืนยันการออกจากระบบ?
             </h3>
-            <p className="text-[14px] text-slate-500 mb-6 leading-relaxed">
-              คุณจะต้องเข้าสู่ระบบใหม่อีกครั้งเพื่อเข้าถึงข้อมูลสุขภาพและบันทึกอาหารของคุณ
+            <p className="text-xs text-slate-500 mb-5 leading-relaxed">
+              คุณจะต้องเข้าสู่ระบบใหม่อีกครั้งเพื่อเข้าถึงบันทึกอาหารของคุณ
             </p>
 
-            {/* Action Buttons */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2.5">
               <button
                 type="button"
                 onClick={() => setShowLogoutModal(false)}
-                className="w-full py-3 text-[15px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 active:scale-95 rounded-xl transition-all"
+                className="w-full py-2.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 active:scale-95 rounded-xl transition-all"
               >
                 ยกเลิก
               </button>
               <button
                 type="button"
                 onClick={confirmLogout}
-                className="w-full py-3 text-[15px] font-semibold text-white bg-red-500 hover:bg-red-600 active:scale-95 rounded-xl shadow-sm transition-all"
+                className="w-full py-2.5 text-xs font-semibold text-white bg-rose-500 hover:bg-rose-600 active:scale-95 rounded-xl shadow-xs transition-all"
               >
                 ออกจากระบบ
               </button>

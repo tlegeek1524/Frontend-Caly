@@ -12,12 +12,12 @@ import {
   UserOutlined
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import type { EventLogRecord } from "../../../types/admin";
-import { AdminFilterBar } from "../components/AdminFilterBar";
+import type { EventLogRecord } from "../../../../types/admin";
+import { AdminFilterBar } from "../../components/AdminFilterBar";
 
 const { Text } = Typography;
 
-type AdminEventLogsTabProps = {
+type EventLogsTabProps = {
   eventLogs: EventLogRecord[];
   loading?: boolean;
   onExportCSV?: () => void;
@@ -37,7 +37,7 @@ const LEVEL_MAP: Record<EventLogRecord["level"], { text: string; color: string; 
   error: { text: "ข้อผิดพลาด", color: "error", icon: <CloseCircleOutlined /> },
 };
 
-export const AdminEventLogsTab = ({ eventLogs, loading = false, onExportCSV }: AdminEventLogsTabProps) => {
+export const EventLogsTab = ({ eventLogs, loading = false, onExportCSV }: EventLogsTabProps) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedLevel, setSelectedLevel] = useState<string>("all");
@@ -61,7 +61,6 @@ export const AdminEventLogsTab = ({ eventLogs, loading = false, onExportCSV }: A
     });
   }, [eventLogs, searchTerm, selectedCategory, selectedLevel]);
 
-  // สรุปสถานะด้านบน
   const statusStats = useMemo(() => {
     return {
       total: eventLogs.length,
@@ -71,7 +70,6 @@ export const AdminEventLogsTab = ({ eventLogs, loading = false, onExportCSV }: A
     };
   }, [eventLogs]);
 
-  // แบ่งหน้าสำหรับ Mobile Feed Cards
   const pagedLogs = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
     return filteredLogs.slice(start, start + pageSize);

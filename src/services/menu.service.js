@@ -18,6 +18,7 @@ const API_BASE_URL = '';
  * @param {string|number} [payload.runnum] - ลำดับ / รหัสอ้างอิง
  * @param {string} [payload.mash] - มื้ออาหาร (เช่น 'breakfast', 'lunch', 'dinner')
  * @param {number} [payload.eat_percent] - เปอร์เซ็นต์การกิน (เช่น 100)
+ * @param {string|number} [payload.locat_ref_id] - รหัสอ้างอิงพิกัด location จาก food_location
  * @returns {Promise<{success: boolean, data?: Object, error?: any}>}
  */
 export const createMenuService = async (payload) => {
@@ -33,7 +34,10 @@ export const createMenuService = async (payload) => {
       image_url: payload.image_url || '',
       runnum: payload.runnum ? String(payload.runnum) : '1',
       mash: payload.mash || 'lunch',
-      eat_percent: payload.eat_percent !== undefined ? Number(payload.eat_percent) : 100
+      eat_percent: payload.eat_percent !== undefined ? Number(payload.eat_percent) : 100,
+      ...(payload.locat_ref_id !== undefined && payload.locat_ref_id !== null && {
+        locat_ref_id: String(payload.locat_ref_id)
+      })
     };
 
     console.log('[MenuService] Sending POST /api/v1/menu:', formattedPayload);

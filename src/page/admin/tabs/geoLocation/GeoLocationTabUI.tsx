@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Card, Row, Col, Button, Tag, Input, Select } from "antd";
+import { Card, Row, Col, Button, Tag, Input, Select, Pagination, Spin } from "antd";
 import { EnvironmentOutlined, SearchOutlined, ReloadOutlined } from "@ant-design/icons";
-import type { GeoLocationRecord } from "../../../types/admin";
-import { AdminFilterBar } from "../components/AdminFilterBar";
+import type { GeoLocationRecord, FoodLocationPagination } from "../../../../types/admin";
+import { AdminFilterBar } from "../../components/AdminFilterBar";
 
 // Longdo Map Global Typing
 declare global {
@@ -15,13 +15,20 @@ type AdminGeoTrackerTabProps = {
   locations: GeoLocationRecord[];
   selectedLocation: GeoLocationRecord | null;
   onSelectLocation: (location: GeoLocationRecord) => void;
+  isLoading?: boolean;
+  pagination?: FoodLocationPagination;
+  onPageChange?: (page: number, limit: number) => void;
+  onRefresh?: () => void;
 };
 
 // API Key จาก .env
 const LONGDO_MAP_KEY = (import.meta.env.VITE_LONGDO_MAP_KEY as string) || "";
+const REDIS_CACHE_TTL_SECONDS = 60;
 
-// ฟังก์ชันสกัดชื่อจังหวัดจาก locationName
-const extractProvince = (locationName: string): string => {
+// ฟังก์ชันสกัดชื่อจังหวัดจากข้อมูลพิกัดหรือ locationName
+const extractProvince = (item: GeoLocationRecord): string => {
+  if (item.province) return item.province;
+  const locationName = item.locationName || "";
   if (!locationName) return "ไม่ระบุจังหวัด";
   if (locationName.includes("กรุงเทพ") || locationName.includes("กทม")) return "กรุงเทพมหานคร";
   if (locationName.includes("เชียงใหม่")) return "เชียงใหม่";
@@ -39,25 +46,59 @@ const extractProvince = (locationName: string): string => {
   return parts[parts.length - 1] || locationName;
 };
 
-export const AdminGeoTrackerTab = ({
+export const GeoLocationTabUI = ({
   locations,
   selectedLocation,
-  onSelectLocation
+  onSelectLocation,
+  isLoading = false,
+  pagination,
+  onPageChange,
+  onRefresh
 }: AdminGeoTrackerTabProps) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProvince, setSelectedProvince] = useState<string>("all");
   const [isMapReady, setIsMapReady] = useState(false);
   const [mapLoadError, setMapLoadError] = useState(false);
+  const [countdown, setCountdown] = useState<number>(REDIS_CACHE_TTL_SECONDS);
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
+  const onRefreshRef = useRef(onRefresh);
+
+  useEffect(() => {
+    onRefreshRef.current = onRefresh;
+  }, [onRefresh]);
+
+  // นับเวลาถอยหลัง 60 วินาที (1 นาที) เพื่อดึงข้อมูลใหม่และอัปเดต Redis Cache
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          if (onRefreshRef.current) {
+            onRefreshRef.current();
+          }
+          return REDIS_CACHE_TTL_SECONDS;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const handleManualRefresh = () => {
+    setCountdown(REDIS_CACHE_TTL_SECONDS);
+    if (onRefresh) {
+      onRefresh();
+    }
+  };
 
   // รายการจังหวัดทั้งหมดที่มีข้อมูลจริง (ดึงอัตโนมัติจากข้อมูล locations)
   const availableProvinces = useMemo(() => {
     const provinceSet = new Set<string>();
     locations.forEach((item) => {
-      const province = extractProvince(item.locationName);
+      const province = extractProvince(item);
       if (province) provinceSet.add(province);
     });
     return Array.from(provinceSet);
@@ -75,13 +116,14 @@ export const AdminGeoTrackerTab = ({
   // กรองตามคำค้นหาและจังหวัด
   const filteredLocations = useMemo(() => {
     return sortedLocations.filter((item) => {
+      const q = searchQuery.toLowerCase();
       const matchSearch =
         searchQuery === "" ||
-        item.foodName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.userName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.locationName.toLowerCase().includes(searchQuery.toLowerCase());
+        item.foodName.toLowerCase().includes(q) ||
+        item.locationName.toLowerCase().includes(q) ||
+        (item.locatRefId && item.locatRefId.toLowerCase().includes(q));
 
-      const itemProvince = extractProvince(item.locationName);
+      const itemProvince = extractProvince(item);
       const matchProvince = selectedProvince === "all" || itemProvince === selectedProvince;
 
       return matchSearch && matchProvince;
@@ -222,7 +264,7 @@ export const AdminGeoTrackerTab = ({
           { lon: item.longitude, lat: item.latitude },
           {
             title: item.foodName,
-            detail: `<div style="font-family:sans-serif;padding:4px;"><b>${item.foodName}</b><br/>${item.userName} • ${item.calories} kcal<br/><span style="color:#64748b;font-size:12px;">${item.locationName}</span></div>`,
+            detail: `<div style="font-family:sans-serif;padding:4px;"><b>${item.foodName}</b><br/>${item.calories} kcal<br/><span style="color:#64748b;font-size:12px;">${item.locationName}</span></div>`,
             weight: isSelected ? window.longdo.OverlayWeight.Top : undefined
           }
         );
@@ -261,7 +303,7 @@ export const AdminGeoTrackerTab = ({
           <>
             <Input
               prefix={<SearchOutlined style={{ color: "#9ca3af" }} />}
-              placeholder="ค้นหาชื่ออาหาร, ผู้ใช้งาน, หรือสถานที่..."
+              placeholder="ค้นหาชื่ออาหาร หรือสถานที่..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="admin-dashboard-search-input"
@@ -290,7 +332,7 @@ export const AdminGeoTrackerTab = ({
         }
         rightContent={
           <span className="admin-dashboard-filter-label" style={{ color: "#64748b", fontWeight: 500 }}>
-            พบ <strong style={{ color: "#1677ff", margin: "0 4px" }}>{filteredLocations.length}</strong> พิกัด
+            พบ <strong style={{ color: "#1677ff", margin: "0 4px" }}>{pagination?.total ?? filteredLocations.length}</strong> พิกัด
           </span>
         }
       />
@@ -301,7 +343,7 @@ export const AdminGeoTrackerTab = ({
           <Card
             title={
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
-                <span className="admin-dashboard-card-title">แผนที่ตำแหน่งการอัปโหลดรูปภาพอาหาร</span>
+                <span className="admin-dashboard-card-title">แผนที่</span>
                 <Tag color="cyan" style={{ margin: 0, fontWeight: 500 }}>
                   Longdo Map
                 </Tag>
@@ -369,65 +411,112 @@ export const AdminGeoTrackerTab = ({
         {/* 2. รายการการ์ดภาพถ่ายอาหารและพิกัดล่าสุด (เรียงจากใหม่ที่สุดไปเก่าที่สุด) */}
         <Col xs={24} lg={9}>
           <Card
-            title={<span className="admin-dashboard-card-title">ภาพถ่ายอาหารและพิกัดล่าสุด</span>}
+            title={
+              <div className="admin-geo-panel-header">
+                <span className="admin-dashboard-card-title">ภาพถ่ายอาหารและพิกัดล่าสุด</span>
+                <div className="admin-geo-countdown-badge">
+                  <span>รีเฟช {countdown}s</span>
+                  <button
+                    type="button"
+                    onClick={handleManualRefresh}
+                    className="admin-geo-countdown-btn"
+                    aria-label="รีเฟรชข้อมูลทันที"
+                  >
+                    <ReloadOutlined spin={isLoading} style={{ fontSize: 11 }} />
+                  </button>
+                </div>
+              </div>
+            }
             variant="borderless"
             className="admin-dashboard-photo-panel"
             styles={{ body: { padding: "10px" } }}
           >
-            <div className="admin-dashboard-photo-scroll">
-              {filteredLocations.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "40px 16px", color: "#94a3b8" }}>
-                  ไม่พบข้อมูลพิกัดภาพถ่ายในจังหวัดที่เลือก
-                </div>
-              ) : (
-                filteredLocations.map((item, index) => {
-                  const isSelected = activeCenterLocation?.id === item.id;
-                  return (
-                    <div
-                      key={item.id}
-                      onClick={() => onSelectLocation(item)}
-                      className={`admin-dashboard-photo-card ${isSelected ? "selected" : ""}`}
-                    >
-                      <img
-                        src={item.imageUrl}
-                        alt={item.foodName}
-                        className="admin-dashboard-photo-img"
-                      />
-                      <div className="admin-dashboard-photo-info">
-                        <div className="admin-dashboard-photo-header">
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, overflow: "hidden" }}>
-                            <span className="admin-dashboard-photo-name" title={item.foodName}>
-                              {item.foodName}
-                            </span>
-                            {index === 0 && (
-                              <Tag color="processing" style={{ fontSize: 10, lineHeight: "16px", padding: "0 4px", margin: 0 }}>
-                                ล่าสุด
-                              </Tag>
-                            )}
+            <Spin spinning={isLoading}>
+              <div className="admin-dashboard-photo-scroll">
+                {filteredLocations.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "40px 16px", color: "#94a3b8" }}>
+                    {isLoading ? "กำลังโหลดข้อมูล..." : "ไม่พบข้อมูลพิกัดภาพถ่ายในจังหวัดที่เลือก"}
+                  </div>
+                ) : (
+                  filteredLocations.map((item, index) => {
+                    const isSelected = activeCenterLocation?.id === item.id;
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => onSelectLocation(item)}
+                        className={`admin-dashboard-photo-card ${isSelected ? "selected" : ""}`}
+                      >
+                        {item.imageUrl ? (
+                          <img
+                            src={item.imageUrl}
+                            alt={item.foodName}
+                            className="admin-dashboard-photo-img"
+                          />
+                        ) : (
+                          <div
+                            className="admin-dashboard-photo-img"
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              backgroundColor: "#f1f5f9",
+                              color: "#94a3b8"
+                            }}
+                          >
+                            <EnvironmentOutlined style={{ fontSize: 20 }} />
                           </div>
-                          <Tag color="orange" className="admin-dashboard-photo-cal">
-                            {item.calories} kcal
-                          </Tag>
-                        </div>
-                        <div className="admin-dashboard-photo-location" title={item.locationName}>
-                          <EnvironmentOutlined style={{ marginRight: 3, flexShrink: 0 }} />
-                          <span>{item.locationName}</span>
-                        </div>
-                        <div className="admin-dashboard-photo-footer">
-                          <span className="admin-dashboard-photo-user">{item.userName}</span>
-                          <span className="admin-dashboard-photo-time">
-                            {new Date(item.timestamp).toLocaleTimeString("th-TH", {
-                              hour: "2-digit",
-                              minute: "2-digit"
-                            })}
-                          </span>
+                        )}
+                        <div className="admin-dashboard-photo-info">
+                          <div className="admin-dashboard-photo-header">
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, overflow: "hidden" }}>
+                              <span className="admin-dashboard-photo-name" title={item.foodName}>
+                                {item.foodName}
+                              </span>
+                              {index === 0 && (!pagination || pagination.page === 1) && (
+                                <Tag color="processing" style={{ fontSize: 10, lineHeight: "16px", padding: "0 4px", margin: 0 }}>
+                                  ล่าสุด
+                                </Tag>
+                              )}
+                            </div>
+                            <Tag color="orange" className="admin-dashboard-photo-cal">
+                              {item.calories} kcal
+                            </Tag>
+                          </div>
+                          <div className="admin-dashboard-photo-location" title={item.locationName}>
+                            <EnvironmentOutlined style={{ marginRight: 3, flexShrink: 0 }} />
+                            <span>{item.locationName}</span>
+                          </div>
+                          <div className="admin-dashboard-photo-footer">
+                            <span className="admin-dashboard-photo-time">
+                              {new Date(item.timestamp).toLocaleString("th-TH", {
+                                day: "2-digit",
+                                month: "short",
+                                hour: "2-digit",
+                                minute: "2-digit"
+                              })}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+                    );
+                  })
+                )}
+              </div>
+            </Spin>
+
+            {pagination && onPageChange && pagination.total > 0 && (
+              <div style={{ display: "flex", justifyContent: "center", marginTop: 10, paddingTop: 8, borderTop: "1px solid var(--border-subtle)" }}>
+                <Pagination
+                  current={pagination.page}
+                  pageSize={pagination.limit}
+                  total={pagination.total}
+                  onChange={(page, pageSize) => onPageChange(page, pageSize)}
+                  size="small"
+                  showSizeChanger
+                  pageSizeOptions={["5", "10", "20", "50"]}
+                />
+              </div>
+            )}
           </Card>
         </Col>
       </Row>

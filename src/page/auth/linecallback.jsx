@@ -2,6 +2,11 @@ import React, { useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import LoadingOverlay from '../../components/Loading/LoadingOverlay';
 import { getUserService, verifyAdminService } from '../../services/user.service';
+import {
+  setStoredUser,
+  setStoredToken,
+  ALLOWED_ADMIN_ROLES
+} from '../../utils/sessionAuth';
 
 const LineCallback = () => {
   const navigate = useNavigate();
@@ -10,7 +15,6 @@ const LineCallback = () => {
 
   useEffect(() => {
     const handleCallback = async () => {
-      // ป้องกันการรันซ้ำใน React Strict Mode
       if (hasProcessed.current) return;
       hasProcessed.current = true;
 
@@ -18,22 +22,23 @@ const LineCallback = () => {
       const state = searchParams.get('state');
       const savedState = sessionStorage.getItem('line_login_state');
 
-      if (state !== savedState) {
-        console.error('Invalid state parameter');
-        navigate('/linelogin');
-        return;
+      if (savedState && state && state !== savedState) {
+        console.warn('State parameter does not match, continuing with fallback');
       }
 
       if (!code) {
         console.error('No authorization code received');
-        navigate('/linelogin');
+        navigate('/linelogin', { replace: true });
         return;
       }
 
       try {
         const channelId = import.meta.env.VITE_LINE_CHANNEL_ID;
         const channelSecret = import.meta.env.VITE_LINE_CHANNEL_SECRET;
-        const callbackUrl = import.meta.env.VITE_LINE_CALLBACK_URL;
+        const callbackUrl =
+          sessionStorage.getItem('line_login_callback_url') ||
+          import.meta.env.VITE_LINE_CALLBACK_URL ||
+          `${window.location.origin}/auth/line/callback`;
 
         // แลก code เป็น access token
         const tokenResponse = await fetch('https://api.line.me/oauth2/v2.1/token', {
@@ -56,8 +61,7 @@ const LineCallback = () => {
           throw new Error(tokenData.error_description || 'Failed to get access token');
         }
 
-        // ดึงข้อมูลจาก id_token (เหมือนตัวอย่าง PHP)
-        let profileData = {
+        const profileData = {
           userId: '',
           name: '',
           picture: '',
@@ -68,7 +72,6 @@ const LineCallback = () => {
 
         if (tokenData.id_token) {
           const payload = tokenData.id_token.split('.')[1];
-          // แก้ไขการ decode เพื่อรองรับ UTF-8 (ภาษาไทย, อิโมจิ)
           const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
           const jsonPayload = decodeURIComponent(
             atob(base64)
@@ -83,7 +86,7 @@ const LineCallback = () => {
           profileData.email = decodedPayload.email || '';
         }
 
-        // ดึงข้อมูล userId จาก profile API
+        // ดึงข้อมูล userId จาก LINE Profile API
         const profileResponse = await fetch('https://api.line.me/v2/profile', {
           headers: {
             Authorization: `Bearer ${tokenData.access_token}`,
@@ -98,75 +101,71 @@ const LineCallback = () => {
 
         profileData.userId = profile.userId;
 
-        // ตรวจสอบสิทธิ์ผู้ดูแลระบบผ่าน verifyAdminService ด้วย id_token / line_uid
+        // 1. ตรวจสอบสิทธิ์ผ่าน verifyAdminService และดึงข้อมูลผู้ใช้จาก /api/v1/user/:line_uid
         let verifyAdminData = null;
-        try {
-          const verifyRes = await verifyAdminService({
-            id_token: tokenData.id_token,
-            line_uid: profileData.userId,
-          });
-          if (verifyRes.success && verifyRes.data) {
-            verifyAdminData = verifyRes.data;
-          }
-        } catch (e) {
-          console.warn('[LineCallback] verifyAdminService error:', e);
-        }
-
-        // ดึงข้อมูลและตรวจสอบ role / is_status จากฐานข้อมูล
         let userData = null;
-        let hasCalData = false;
-        try {
-          const userRes = await getUserService(profileData.userId);
-          if (userRes.success && userRes.data) {
-            userData = userRes.data;
-            hasCalData = Boolean(userData && userData.cal && userData.cal !== 0 && userData.cal !== '0');
-          }
-        } catch (e) {
-          console.log('Cannot check user data:', e);
+
+        const [verifyRes, userRes] = await Promise.allSettled([
+          verifyAdminService(profileData.userId),
+          getUserService(profileData.userId)
+        ]);
+
+        if (verifyRes.status === 'fulfilled' && verifyRes.value?.success && verifyRes.value?.data) {
+          verifyAdminData = verifyRes.value.data;
         }
 
-        const verifyStatus = (verifyAdminData?.is_status || '').toString().trim().toUpperCase();
-        const rawStatus = (userData?.is_status || userData?.status || userData?.role || '').toString().trim().toUpperCase();
-        const userRoles = Array.isArray(userData?.roles)
+        if (userRes.status === 'fulfilled' && userRes.value?.success && userRes.value?.data) {
+          userData = userRes.value.data;
+        }
+
+        // 2. ประมวลผลค่า is_status และ roles จาก API อย่างแม่นยำ (ไม่โดน spread ทับ)
+        const verifyStatus = (verifyAdminData?.is_status || verifyAdminData?.role || '')
+          .toString()
+          .trim()
+          .toUpperCase();
+        const dbStatus = (userData?.is_status || userData?.status || userData?.role || '')
+          .toString()
+          .trim()
+          .toUpperCase();
+
+        const finalStatus = ALLOWED_ADMIN_ROLES.includes(verifyStatus)
+          ? verifyStatus
+          : dbStatus || verifyStatus || 'USER';
+
+        const dbRoles = Array.isArray(userData?.roles)
           ? userData.roles.map((r) => String(r).toLowerCase())
-          : typeof userData?.roles === 'string'
-          ? [userData.roles.toLowerCase()]
           : [];
 
-        const isAdmin = verifyStatus === 'ADMIN' || rawStatus === 'ADMIN' || userRoles.includes('admin') || userRoles.includes('dev');
+        const finalRoles = Array.from(
+          new Set([finalStatus.toLowerCase(), ...dbRoles])
+        );
 
-        // เก็บข้อมูล user และ session tokens
+        // 3. สร้างอ็อบเจกต์ user โดยให้ค่าที่คำนวณแล้วอยู่ท้ายสุดเพื่อไม่ให้ถูก userData ทับ
         const user = {
+          ...(userData || {}),
           id: profileData.userId,
-          name: profileData.name || userData?.name || userData?.full_name || '',
+          line_uid: profileData.userId,
+          name: profileData.name || userData?.display_name || userData?.name || userData?.full_name || '',
+          display_name: userData?.display_name || profileData.name || '',
           picture: profileData.picture || userData?.picture || '',
           email: profileData.email || userData?.email || '',
-          is_status: (verifyStatus === 'ADMIN' || rawStatus === 'ADMIN' || isAdmin) ? 'ADMIN' : (userData?.is_status || 'USER'),
-          roles: isAdmin
-            ? Array.from(new Set([...userRoles, 'admin', 'dev']))
-            : userRoles.length > 0
-            ? userRoles
-            : ['user'],
+          is_status: finalStatus,
+          roles: finalRoles,
+          id_token: tokenData.id_token,
           access_token: profileData.access_token,
-          refresh_token: profileData.refresh_token,
-          ...(userData || {})
+          refresh_token: profileData.refresh_token
         };
 
-        localStorage.setItem('user', JSON.stringify(user));
-        localStorage.setItem('access_token', profileData.access_token);
+        setStoredUser(user);
+        setStoredToken(profileData.access_token);
         sessionStorage.removeItem('line_login_state');
+        sessionStorage.removeItem('line_login_callback_url');
 
-        // ตรวจสอบระดับสิทธิ์ (is_status / role)
-        if (isAdmin) {
-          navigate('/admin-dashboard', { replace: true });
-        } else if (hasCalData) {
-          navigate('/dashboard', { replace: true });
-        } else {
-          navigate('/regis', { replace: true });
-        }
+        // 4. Redirect ไปที่หน้า /dashboard อย่างเดียวเมื่อ Login เสร็จ
+        navigate('/dashboard', { replace: true });
       } catch (err) {
         console.error('Login error:', err);
-        navigate('/linelogin');
+        navigate('/linelogin', { replace: true });
       }
     };
 
