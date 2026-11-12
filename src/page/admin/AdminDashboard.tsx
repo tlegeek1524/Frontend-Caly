@@ -40,11 +40,10 @@ const ADMIN_NAV_ITEMS = [
   { key: "overview", label: "ภาพรวม", icon: <DashboardOutlined /> },
   { key: "geo", label: "แผนที่", icon: <EnvironmentOutlined /> },
   { key: "users", label: "สิทธิ์", icon: <SafetyCertificateOutlined /> },
-  { key: "audit-logs", label: "Log", icon: <HistoryOutlined /> },
   { key: "profile", label: "โปรไฟล์", icon: <UserOutlined /> }
 ];
 
-const VALID_TABS = ["overview", "geo", "users", "audit-logs", "event-logs", "profile"];
+const VALID_TABS = ["overview", "geo", "users", "profile"];
 
 export const AdminDashboard = () => {
   const { t } = useApp();

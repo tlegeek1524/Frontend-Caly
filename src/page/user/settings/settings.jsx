@@ -1,14 +1,44 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, ChevronRight, User } from 'lucide-react';
+import { LogOut, ChevronRight, User, Bot } from 'lucide-react';
+import { Switch } from 'antd';
+import toast from 'react-hot-toast';
 import BottomNav from '../../../components/BottomNav/BottomNav';
 import UserHeader from '../../../components/UserHeader/UserHeader';
 import { getStoredUser, clearStoredAuth } from '../../../utils/sessionAuth';
+import {
+  isMascotVisibleToday,
+  setMascotVisible,
+  MASCOT_VISIBILITY_EVENT
+} from '../../../components/SideMascot';
 
 const Settings = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [mascotVisible, setMascotVisibleState] = useState(isMascotVisibleToday());
+
+  useEffect(() => {
+    const handleSync = () => {
+      setMascotVisibleState(isMascotVisibleToday());
+    };
+    window.addEventListener(MASCOT_VISIBILITY_EVENT, handleSync);
+    window.addEventListener('storage', handleSync);
+    return () => {
+      window.removeEventListener(MASCOT_VISIBILITY_EVENT, handleSync);
+      window.removeEventListener('storage', handleSync);
+    };
+  }, []);
+
+  const handleToggleMascot = (checked) => {
+    setMascotVisible(checked);
+    setMascotVisibleState(checked);
+    if (checked) {
+      toast.success('นำ Caly Buddy กลับมาแสดงแล้ว');
+    } else {
+      toast('ปิดการแสดง Caly Buddy แล้ว');
+    }
+  };
 
   useEffect(() => {
     const storedUser = getStoredUser();
@@ -36,7 +66,7 @@ const Settings = () => {
       {/* Header */}
       <UserHeader title="ตั้งค่า" subtitle="จัดการบัญชีและการตั้งค่าแอป" />
 
-      <main className="max-w-md mx-auto px-4 py-5 space-y-4">
+      <main className="max-w-md mx-auto px-4 py-5 space-y-4 h-auto max-h-none">
         {/* Profile Card Preview */}
         <div className="bg-white rounded-2xl p-4 border border-slate-100/80 shadow-xs flex items-center gap-3.5">
           {user.picture ? (
@@ -54,9 +84,6 @@ const Settings = () => {
             <h3 className="text-sm font-semibold text-slate-900 truncate">
               {user.name || 'ผู้ใช้งาน'}
             </h3>
-            <p className="text-xs text-slate-400 truncate">
-              LINE UID: {user.id}
-            </p>
           </div>
         </div>
 
@@ -69,16 +96,41 @@ const Settings = () => {
           </div>
           <button 
             onClick={() => navigate('/regis')}
-            className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors"
+            className="w-full px-4 py-3.5 grid grid-cols-[auto_1fr_auto] items-center gap-3 text-left hover:bg-slate-50 active:bg-slate-100 transition-colors"
           >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                <User className="w-4 h-4" />
-              </div>
-              <span className="text-sm font-medium text-slate-800">แก้ไขข้อมูลส่วนตัว / คำนวณ TDEE</span>
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <User className="w-4 h-4" />
             </div>
+            <span className="text-sm font-medium text-slate-800 truncate">แก้ไขข้อมูลส่วนตัว / คำนวณ TDEE</span>
             <ChevronRight className="w-4 h-4 text-slate-400" />
           </button>
+        </div>
+
+        {/* Mascot Assistant Section */}
+        <div className="bg-white rounded-2xl overflow-hidden border border-slate-100/80 shadow-xs">
+          <div className="px-4 py-2.5 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+              ผู้ช่วยตัวการ์ตูน (Caly Buddy)
+            </span>
+          </div>
+          <div className="px-4 py-3.5 grid grid-cols-[auto_1fr_auto] items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <Bot className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-slate-800">แสดง Caly Buddy ข้างจอ</p>
+              <p className="text-xs text-slate-400">
+                {mascotVisible
+                  ? 'กำลังแสดงคำแนะนำและทักทาย'
+                  : 'ปิดอยู่ (เปิดเพื่อนำกลับมาแสดงทันที)'}
+              </p>
+            </div>
+            <Switch
+              checked={mascotVisible}
+              onChange={handleToggleMascot}
+              className={mascotVisible ? '!bg-emerald-500' : ''}
+            />
+          </div>
         </div>
 
         {/* Logout Button */}

@@ -15,7 +15,9 @@ import type {
   FoodLocationsApiResponse,
   GeoLocationRecord,
   ProvinceStatisticItem,
-  ProvinceStatisticResponse
+  ProvinceStatisticResponse,
+  ApiRequestLogsResponse,
+  ApiRequestLogsQueryParams
 } from "../types/admin";
 import adminUsersData from "../data/mock/adminUsers.json";
 import auditLogsData from "../data/mock/auditLogs.json";
@@ -298,6 +300,53 @@ export const fetchRequestsTimelineService = async (params?: TimelineQueryParams)
     };
   } catch (error) {
     console.error("[AdminService] fetchRequestsTimelineService error:", error);
+    return { success: false, error };
+  }
+};
+
+export const fetchApiRequestLogsService = async (
+  params?: ApiRequestLogsQueryParams
+): Promise<{
+  success: boolean;
+  data?: ApiRequestLogsResponse;
+  error?: unknown;
+}> => {
+  try {
+    const token = getStoredToken();
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const query = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, val]) => {
+        if (val !== undefined && val !== null && val !== "") {
+          query.set(key, String(val));
+        }
+      });
+    }
+
+    const queryString = query.toString();
+    const url = `${API_BASE_URL}/api/railway/api-request-logs${queryString ? `?${queryString}` : ""}`;
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers,
+    });
+
+    if (!response.ok) {
+      return { success: false, error: response.statusText };
+    }
+
+    const resData = await response.json();
+    return {
+      success: resData?.success ?? true,
+      data: resData,
+    };
+  } catch (error) {
     return { success: false, error };
   }
 };

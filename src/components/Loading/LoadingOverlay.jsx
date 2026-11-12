@@ -5,8 +5,13 @@ import React from 'react';
  * @param {Object} props
  * @param {boolean} props.show - สถานะการแสดงผล
  * @param {string} [props.message='กำลังโหลดข้อมูล...'] - ข้อความแสดงใต้ spinner
+ * @param {string} [props.description='กรุณารอสักครู่'] - คำอธิบายเพิ่มเติมใต้ข้อความหลัก
  */
-export const LoadingOverlay = ({ show, message = 'กำลังโหลดข้อมูล...' }) => {
+export const LoadingOverlay = ({
+  show,
+  message = 'กำลังโหลดข้อมูล...',
+  description = 'กรุณารอสักครู่',
+}) => {
   if (!show) return null;
 
   return (
@@ -24,7 +29,7 @@ export const LoadingOverlay = ({ show, message = 'กำลังโหลดข
           {message}
         </p>
         <span className="text-[12px] text-white/80 drop-shadow-sm mt-0.5">
-          กรุณารอสักครู่
+          {description}
         </span>
       </div>
     </div>

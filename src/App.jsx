@@ -1,9 +1,11 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import SidebarLayout from "./components/Sidebar/SidebarLayout";
+import { UserLayout } from "./components/UserLayout";
 import { ErrorPage } from "./page/error/ErrorPage";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { RoleProtectedRoute } from "./components/RoleProtectedRoute";
+import { ProtectApp } from "./components/ProtectApp";
 import { AppProvider } from "./context/AppContext";
 import LoadingOverlay from "./components/Loading/LoadingOverlay";
 import { Toaster } from "react-hot-toast";
@@ -47,11 +49,15 @@ function App() {
               <Route path="/signup" element={<Signup />} />
               <Route path="/regis" element={<Regispage />} />
 
-              {/* User Routes */}
-              <Route path="/dashboard" element={<MainDashboard />} />
-              <Route path="/foodmenu" element={<FoodMenu />} />
-              <Route path="/profile" element={<Profile />} />
-              <Route path="/settings" element={<Settings />} />
+              {/* User Routes (ตรวจสอบการลงทะเบียนผู้ใช้ก่อนเข้าใช้งาน) */}
+              <Route element={<ProtectApp />}>
+                <Route element={<UserLayout />}>
+                  <Route path="/dashboard" element={<MainDashboard />} />
+                  <Route path="/foodmenu" element={<FoodMenu />} />
+                  <Route path="/profile" element={<Profile />} />
+                  <Route path="/settings" element={<Settings />} />
+                </Route>
+              </Route>
 
               {/* Protected Admin Routes (อนุญาตเฉพาะ ADMIN, DEV, STAFF) */}
               <Route element={<RoleProtectedRoute allowedRoles={["ADMIN", "DEV", "STAFF"]} />}>

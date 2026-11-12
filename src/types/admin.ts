@@ -265,6 +265,37 @@ export type RequestsTimelineEndpointItem = {
   lastAccessedAt?: string;
 };
 
+export type ApiRequestLogRecord = {
+  id: number;
+  method: string;
+  endpoint: string;
+  statusCode: number;
+  ip: string;
+  durationMs: number;
+  createdAt: string;
+};
+
+export type ApiRequestLogsFilter = {
+  path?: string | null;
+  method?: string | null;
+  status?: string | null;
+  date?: string | null;
+};
+
+export type ApiRequestLogsResponse = {
+  success: boolean;
+  filter?: ApiRequestLogsFilter;
+  total: number;
+  data: ApiRequestLogRecord[];
+};
+
+export type ApiRequestLogsQueryParams = {
+  path?: string;
+  method?: string;
+  date?: string;
+  status?: string;
+};
+
 export type RequestsTimelineBucket = {
   timeBucket: string;
   timestamp?: number;

@@ -79,7 +79,10 @@ export const getUserService = async (lineUid) => {
       return { success: false, status: response.status };
     }
     const result = await response.json();
-    return { success: true, data: result.data || result };
+    if (result?.status === "not_found" || result?.data === null) {
+      return { success: false, status: "not_found", data: null };
+    }
+    return { success: true, data: result.data ?? result };
   } catch (error) {
     console.error('[UserService] getUserService error:', error);
     return { success: false, error };

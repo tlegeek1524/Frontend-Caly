@@ -21,8 +21,15 @@ import {
 } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import { AdminFilterBar } from "../../components/AdminFilterBar";
-import type { RailwayCompareData, RequestsTimelineResponse, ProvinceStatisticItem } from "../../../../types/admin";
-import { fetchRequestsTimelineService, fetchProvinceStatisticsService } from "../../../../services/adminService";
+import type {
+  RailwayCompareData,
+  ProvinceStatisticItem,
+  ApiRequestLogRecord
+} from "../../../../types/admin";
+import {
+  fetchApiRequestLogsService,
+  fetchProvinceStatisticsService
+} from "../../../../services/adminService";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -78,7 +85,7 @@ export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
     dayjs()
   ]);
   const [metricType, setMetricType] = useState<"uploads" | "activeUsers">("uploads");
-  const [timelineData, setTimelineData] = useState<RequestsTimelineResponse | null>(null);
+  const [uploadLogs, setUploadLogs] = useState<ApiRequestLogRecord[]>([]);
   const [loadingTimeline, setLoadingTimeline] = useState(false);
   const [provinceStats, setProvinceStats] = useState<ProvinceStatisticItem[]>([]);
   const [loadingProvinceStats, setLoadingProvinceStats] = useState(false);
@@ -87,51 +94,31 @@ export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
 
   useEffect(() => {
     let isMounted = true;
-    const loadTimeline = async (isBackground = false) => {
+    const loadLogs = async (isBackground = false) => {
       if (!isBackground) {
         setLoadingTimeline(true);
       }
       try {
         if (filterMode === "1day") {
-          const res = await fetchRequestsTimelineService({
-            date: dayjs().format("YYYY-MM-DD"),
-            interval: "1h",
-            fillEmpty: true,
+          const res = await fetchApiRequestLogsService({
             path: "/api/v1/menu",
             method: "POST",
-            timezone: "Asia/Bangkok"
+            date: dayjs().format("YYYY-MM-DD")
           });
-          if (isMounted && res.success && res.data) {
-            setTimelineData(res.data);
+          if (isMounted && res.success && Array.isArray(res.data?.data)) {
+            setUploadLogs(res.data.data);
           }
           return;
         }
 
-        let startDate: Dayjs;
-        let endDate: Dayjs;
-
-        if (filterMode === "7days") {
-          startDate = dayjs().subtract(6, "day");
-          endDate = dayjs();
-        } else if (filterMode === "30days") {
-          startDate = dayjs().subtract(29, "day");
-          endDate = dayjs();
-        } else {
-          startDate = customRange[0];
-          endDate = customRange[1];
-        }
-
-        const res = await fetchRequestsTimelineService({
-          from: startDate.format("YYYY-MM-DD"),
-          to: endDate.format("YYYY-MM-DD"),
-          interval: "1d",
-          fillEmpty: true,
+        // สำหรับช่วงหลายวัน (7 วัน, 30 วัน, กำหนดเอง)
+        // ดึง logs ของ path: /api/v1/menu & method: POST ทั้งหมดแล้วกรองตามช่วงวันที่
+        const res = await fetchApiRequestLogsService({
           path: "/api/v1/menu",
-          method: "POST",
-          timezone: "Asia/Bangkok"
+          method: "POST"
         });
-        if (isMounted && res.success && res.data) {
-          setTimelineData(res.data);
+        if (isMounted && res.success && Array.isArray(res.data?.data)) {
+          setUploadLogs(res.data.data);
         }
       } finally {
         if (isMounted && !isBackground) {
@@ -140,8 +127,8 @@ export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
       }
     };
 
-    loadTimeline(false);
-    const timer = setInterval(() => loadTimeline(true), 5 * 60 * 1000);
+    loadLogs(false);
+    const timer = setInterval(() => loadLogs(true), 5 * 60 * 1000);
     return () => {
       isMounted = false;
       clearInterval(timer);
@@ -188,28 +175,20 @@ export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
     if (filterMode === "1day") {
       if (metricType === "uploads") {
         const hourlyCounts = new Array(24).fill(0);
-        const series = timelineData?.timeSeries || [];
+        const todayStr = dayjs().format("YYYY-MM-DD");
 
-        series.forEach((slot) => {
-          const menuPost = slot.endpoints?.find(
-            (ep) => ep.method === "POST" && ep.endpoint === "/api/v1/menu"
-          );
-          if (menuPost) {
-            const hourIdx = slot.label
-              ? parseInt(slot.label.split(":")[0], 10)
-              : dayjs(slot.timeBucket).hour();
-            if (!Number.isNaN(hourIdx) && hourIdx >= 0 && hourIdx < 24) {
-              hourlyCounts[hourIdx] += menuPost.totalRequests || 0;
+        uploadLogs.forEach((log) => {
+          if (!log.createdAt) return;
+          const logDate = dayjs(log.createdAt);
+          if (logDate.format("YYYY-MM-DD") === todayStr) {
+            const hour = logDate.hour();
+            if (hour >= 0 && hour < 24) {
+              hourlyCounts[hour] += 1;
             }
           }
         });
 
-        const summaryPost = timelineData?.endpointsSummary?.find(
-          (ep) => ep.method === "POST" && ep.endpoint === "/api/v1/menu"
-        );
-
-        const seriesSum = hourlyCounts.reduce((sum, v) => sum + v, 0);
-        const total = summaryPost ? summaryPost.totalRequests : seriesSum;
+        const total = hourlyCounts.reduce((sum, v) => sum + v, 0);
         const avg = Number((total / HOURLY_LABELS.length).toFixed(1));
         const peak = Math.max(...hourlyCounts);
         const peakIndex = hourlyCounts.indexOf(peak);
@@ -219,7 +198,6 @@ export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
           data: hourlyCounts,
           label: "อัปโหลดอาหาร (POST /api/v1/menu)",
           unit: "รูป",
-          endpointStat: summaryPost || null,
           summary: {
             total,
             avg,
@@ -240,7 +218,6 @@ export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
         data,
         label: "ผู้ใช้งาน Active",
         unit: "คน",
-        endpointStat: null,
         summary: {
           total,
           avg,
@@ -254,14 +231,14 @@ export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
     let endDate: Dayjs;
 
     if (filterMode === "7days") {
-      startDate = dayjs().subtract(6, "day");
-      endDate = dayjs();
+      startDate = dayjs().subtract(6, "day").startOf("day");
+      endDate = dayjs().endOf("day");
     } else if (filterMode === "30days") {
-      startDate = dayjs().subtract(29, "day");
-      endDate = dayjs();
+      startDate = dayjs().subtract(29, "day").startOf("day");
+      endDate = dayjs().endOf("day");
     } else {
-      startDate = customRange[0];
-      endDate = customRange[1];
+      startDate = customRange[0].startOf("day");
+      endDate = customRange[1].endOf("day");
     }
 
     const diffDays = Math.max(1, endDate.diff(startDate, "day") + 1);
@@ -270,18 +247,16 @@ export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
 
     if (metricType === "uploads") {
       const dateCountMap = new Map<string, number>();
-      const series = timelineData?.timeSeries || [];
 
-      series.forEach((slot) => {
-        const menuPost = slot.endpoints?.find(
-          (ep) => ep.method === "POST" && ep.endpoint === "/api/v1/menu"
-        );
-        if (menuPost) {
-          const dateKey =
-            slot.label && /^\d{4}-\d{2}-\d{2}$/.test(slot.label)
-              ? slot.label
-              : dayjs(slot.timeBucket).format("YYYY-MM-DD");
-          dateCountMap.set(dateKey, (dateCountMap.get(dateKey) || 0) + (menuPost.totalRequests || 0));
+      uploadLogs.forEach((log) => {
+        if (!log.createdAt) return;
+        const logDate = dayjs(log.createdAt);
+        if (
+          (logDate.isAfter(startDate) || logDate.isSame(startDate)) &&
+          (logDate.isBefore(endDate) || logDate.isSame(endDate))
+        ) {
+          const dateKey = logDate.format("YYYY-MM-DD");
+          dateCountMap.set(dateKey, (dateCountMap.get(dateKey) || 0) + 1);
         }
       });
 
@@ -292,12 +267,7 @@ export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
         data.push(dateCountMap.get(dateKey) || 0);
       }
 
-      const summaryPost = timelineData?.endpointsSummary?.find(
-        (ep) => ep.method === "POST" && ep.endpoint === "/api/v1/menu"
-      );
-
-      const seriesSum = data.reduce((sum, v) => sum + v, 0);
-      const total = summaryPost ? summaryPost.totalRequests : seriesSum;
+      const total = data.reduce((sum, v) => sum + v, 0);
       const avg = Number((total / data.length).toFixed(1));
       const peak = Math.max(...data);
       const peakIndex = data.indexOf(peak);
@@ -307,7 +277,6 @@ export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
         data,
         label: "อัปโหลดอาหาร (POST /api/v1/menu)",
         unit: "รูป",
-        endpointStat: summaryPost || null,
         summary: {
           total,
           avg,
@@ -335,7 +304,6 @@ export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
       data,
       label: "ผู้ใช้งาน Active",
       unit: "คน",
-      endpointStat: null,
       summary: {
         total,
         avg,
@@ -343,7 +311,7 @@ export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
         periodText: `${startDate.format("DD/MM")} - ${endDate.format("DD/MM")} (${diffDays} วัน)`
       }
     };
-  }, [filterMode, customRange, metricType, timelineData]);
+  }, [filterMode, customRange, metricType, uploadLogs]);
 
   const mainChartData = {
     labels: chartDataComputed.labels,
@@ -461,6 +429,7 @@ export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
     <div className="admin-overview-container">
       {/* Global Filter Bar */}
       <AdminFilterBar
+        className="admin-overview-filter-bar"
         leftContent={
           <>
             <span className="admin-dashboard-filter-label">
@@ -501,9 +470,8 @@ export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
                     style={{ height: 38 }}
                     icon={<ReloadOutlined />}
                     onClick={handleResetToDefault}
-                  >
-                    รีเซ็ต
-                  </Button>
+                    aria-label="รีเซ็ต"
+                  />
                 </AntTooltip>
               </div>
             )}
@@ -586,8 +554,8 @@ export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
           <Card
             className="admin-overview-chart-card"
             title={
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", flexWrap: "wrap", gap: 8 }}>
-                <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", gap: 12 }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="admin-dashboard-card-title">ผู้ใช้งานในแต่ละจังหวัด</div>
                   <div className="admin-overview-chart-sub">
                     การกระจายตัวตามพิกัดหลัก
@@ -597,7 +565,7 @@ export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
                   value={selectedProvinceFilter}
                   onChange={setSelectedProvinceFilter}
                   size="small"
-                  style={{ minWidth: 130 }}
+                  style={{ minWidth: 110, flexShrink: 0 }}
                   options={[
                     { value: "all", label: "ทุกจังหวัด" },
                     ...availableProvincesList.map((prov) => ({
@@ -609,7 +577,7 @@ export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
               </div>
             }
             variant="borderless"
-            styles={{ body: { padding: "12px 14px 16px" } }}
+            styles={{ header: { padding: "12px 16px" }, body: { padding: "12px 16px 16px" } }}
           >
             <div className="admin-overview-chart-wrapper">
               {loadingProvinceStats ? (
@@ -638,9 +606,9 @@ export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
               </div>
             }
             variant="borderless"
-            styles={{ body: { padding: "14px 16px" } }}
+            styles={{ body: { padding: "16px 20px" } }}
           >
-            <Row gutter={[24, 16]} className="admin-dashboard-resources-container">
+            <Row gutter={[16, 20]} className="admin-dashboard-resources-container">
               <Col xs={24} md={8} className="admin-dashboard-resource-col">
                 <div className="admin-dashboard-resource-row">
                   <span>CPU Usage</span>
@@ -657,7 +625,6 @@ export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
                   format={(p) => `${p ?? 0}%`}
                 />
               </Col>
-              <Divider type="vertical" className="admin-dashboard-resource-divider" />
               <Col xs={24} md={8} className="admin-dashboard-resource-col">
                 <div className="admin-dashboard-resource-row">
                   <span>Memory (RAM)</span>
@@ -674,7 +641,6 @@ export const OverviewTabUI = ({ railwayCompare }: AdminOverviewTabProps) => {
                   format={(p) => `${p ?? 0}%`}
                 />
               </Col>
-              <Divider type="vertical" className="admin-dashboard-resource-divider" />
               <Col xs={24} md={8} className="admin-dashboard-resource-col">
                 <div className="admin-dashboard-resource-row">
                   <span>Storage / Disk</span>

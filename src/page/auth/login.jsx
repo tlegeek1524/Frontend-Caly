@@ -68,7 +68,7 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-[#f0f4f0] p-4 sm:p-6 font-['Knit']">
+    <div className="min-h-screen w-full flex items-center justify-center bg-[#f0f4f0] p-4 sm:p-6 font-['Kanit']">
       <div className="w-full max-w-[320px] sm:max-w-[360px] animate-fadeIn">
         
         {/* Simple Branding */}

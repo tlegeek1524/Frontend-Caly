@@ -28,11 +28,11 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [theme, setThemeState] = useState<ThemeMode>(() => {
-    return (localStorage.getItem("app_theme") as ThemeMode) || "light";
+    return (sessionStorage.getItem("app_theme") as ThemeMode) || "light";
   });
 
   const [language, setLanguageState] = useState<Language>(() => {
-    return (localStorage.getItem("app_lang") as Language) || "th";
+    return (sessionStorage.getItem("app_lang") as Language) || "th";
   });
 
   // ใช้เทคนิค disable-transitions ชั่วขณะตอนเปลี่ยนธีมเพื่อป้องกันอาการกะพริบจาก transition ไม่พร้อมกัน
@@ -67,7 +67,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
   const setTheme = (mode: ThemeMode) => {
     setThemeState(mode);
-    localStorage.setItem("app_theme", mode);
+    sessionStorage.setItem("app_theme", mode);
     applyThemeToDOM(mode);
   };
 
@@ -78,7 +78,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
   const setLanguage = (lang: Language) => {
     setLanguageState(lang);
-    localStorage.setItem("app_lang", lang);
+    sessionStorage.setItem("app_lang", lang);
   };
 
   const toggleLanguage = () => {
@@ -132,7 +132,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         theme={{
           algorithm: theme === "dark" ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
           token: {
-            fontFamily: '"Knit", "Sarabun", sans-serif',
+            fontFamily: '"Kanit", "Sarabun", sans-serif',
             colorPrimary: "#1677ff",
             borderRadius: 8
           }

@@ -172,14 +172,7 @@ const LineCallback = () => {
     handleCallback();
   }, [searchParams, navigate]);
 
-  return (
-    <div 
-      className="min-h-screen bg-[#f2f2f7] flex items-center justify-center"
-      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}
-    >
-      <LoadingOverlay show={true} message="กำลังเข้าสู่ระบบและตรวจสอบข้อมูล..." />
-    </div>
-  );
+  return <LoadingOverlay show={true} />;
 };
 
 export default LineCallback;

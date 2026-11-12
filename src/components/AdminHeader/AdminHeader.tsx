@@ -1,7 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { UserOutlined, LogoutOutlined } from "@ant-design/icons";
-import { Sun, Moon, Globe, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { useApp } from "../../context/AppContext";
 import "./AdminHeader.css";
 
@@ -19,7 +19,7 @@ export const AdminHeader = ({
   onLogoutClick
 }: AdminHeaderProps) => {
   const navigate = useNavigate();
-  const { theme, toggleTheme, language, toggleLanguage, t } = useApp();
+  const { t } = useApp();
 
   const displayName = String(
     currentUser?.displayName ||
@@ -43,27 +43,6 @@ export const AdminHeader = ({
         >
           <ExternalLink size={14} />
           <span>หน้า User</span>
-        </button>
-
-        {/* Language Switcher Button (TH / EN) */}
-        <button
-          type="button"
-          onClick={toggleLanguage}
-          className="admin-header-tool-btn"
-          title={language === "th" ? "Switch to English" : "เปลี่ยนเป็นภาษาไทย"}
-        >
-          <Globe size={15} />
-          <span className="admin-header-tool-text">{language === "th" ? "TH" : "EN"}</span>
-        </button>
-
-        {/* Theme Switcher Button (Light / Dark) */}
-        <button
-          type="button"
-          onClick={toggleTheme}
-          className="admin-header-tool-btn"
-          title={theme === "light" ? t("common.darkMode") : t("common.lightMode")}
-        >
-          {theme === "light" ? <Moon size={15} /> : <Sun size={15} />}
         </button>
 
         {/* Profile Button */}

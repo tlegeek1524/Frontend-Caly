@@ -56,7 +56,7 @@ export const fetchActivePDPATemplate = async (): Promise<PDPATemplate | null> =>
 export const checkPDPAConsentService = async (params?: { user_id?: string | number; version?: string }): Promise<boolean> => {
   try {
     const query = new URLSearchParams();
-    if (params?.user_id) query.append("user_id", String(params.user_id));
+    if (params?.user_id) query.append("line_uid", String(params.user_id));
     if (params?.version) query.append("version", params.version);
 
     const queryString = query.toString();
@@ -71,14 +71,17 @@ export const checkPDPAConsentService = async (params?: { user_id?: string | numb
       return false;
     }
 
-    const resData: CheckPDPAConsentResponse = await response.json();
-    
-    if (typeof resData.accepted === "boolean") return resData.accepted;
-    if (typeof resData.is_accepted === "boolean") return resData.is_accepted;
-    if (typeof resData.has_accepted === "boolean") return resData.has_accepted;
-    if (typeof resData.data?.accepted === "boolean") return resData.data.accepted;
-    if (typeof resData.data?.is_accepted === "boolean") return resData.data.is_accepted;
-    if (typeof resData.data?.has_accepted === "boolean") return resData.data.has_accepted;
+    const resData = await response.json();
+
+    if (resData?.consent_status === "ACCEPTED") return true;
+    if (typeof resData?.consented === "boolean") return resData.consented;
+    if (typeof resData?.details?.is_accepted === "boolean") return resData.details.is_accepted;
+    if (typeof resData?.accepted === "boolean") return resData.accepted;
+    if (typeof resData?.is_accepted === "boolean") return resData.is_accepted;
+    if (typeof resData?.has_accepted === "boolean") return resData.has_accepted;
+    if (typeof resData?.data?.accepted === "boolean") return resData.data.accepted;
+    if (typeof resData?.data?.is_accepted === "boolean") return resData.data.is_accepted;
+    if (typeof resData?.data?.has_accepted === "boolean") return resData.data.has_accepted;
 
     return false;
   } catch (error) {

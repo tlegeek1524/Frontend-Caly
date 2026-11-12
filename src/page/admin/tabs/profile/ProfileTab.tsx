@@ -18,10 +18,19 @@ export const AdminProfileTab = ({
       currentUser?.username ||
       "ผู้ดูแลระบบ"
   );
-  const email = String(currentUser?.email || "admin@caly.com");
-  const isStatus = String(currentUser?.is_status || "ADMIN");
-  const username = String(currentUser?.username || "admin");
-  const lineUid = currentUser?.id ? String(currentUser.id) : "-";
+  const email = currentUser?.email ? String(currentUser.email) : "-";
+  const isStatus = currentUser?.is_status ? String(currentUser.is_status) : "-";
+  const username = currentUser?.username ? String(currentUser.username) : "-";
+  const primaryRole = (isStatus !== "-" ? isStatus : "ADMIN").toUpperCase();
+  const extraRoles = Array.isArray(currentUser?.roles)
+    ? Array.from(
+        new Set(
+          currentUser.roles
+            .map((r: unknown) => String(r).trim().toUpperCase())
+            .filter((r) => r && r !== primaryRole)
+        )
+      )
+    : [];
 
   return (
     <div className="admin-profile-view">
@@ -43,13 +52,12 @@ export const AdminProfileTab = ({
         <p className="admin-profile-email">{email}</p>
 
         <div className="admin-profile-tags">
-          <Tag color="success">ADMIN</Tag>
-          {Array.isArray(currentUser?.roles) &&
-            currentUser.roles.map((r: unknown) => (
-              <Tag key={String(r)} color="blue">
-                {String(r).toUpperCase()}
-              </Tag>
-            ))}
+          <Tag color="success">{primaryRole}</Tag>
+          {extraRoles.map((role) => (
+            <Tag key={role} color="blue">
+              {role}
+            </Tag>
+          ))}
         </div>
       </div>
 
@@ -73,11 +81,6 @@ export const AdminProfileTab = ({
         <div className="admin-profile-row">
           <span className="admin-profile-label">ชื่อผู้ใช้</span>
           <span className="admin-profile-value">{username}</span>
-        </div>
-
-        <div className="admin-profile-row">
-          <span className="admin-profile-label">User ID / LINE UID</span>
-          <span className="admin-profile-value">{lineUid}</span>
         </div>
       </div>
 

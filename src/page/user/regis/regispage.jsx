@@ -137,7 +137,6 @@ const Regispage = () => {
         };
 
         if (isExistingUser) {
-          console.log('PATCH to /api/v1/user/' + userId, basePayload);
           const { success, error } = await updateUserService(userId, basePayload);
           if (!success) {
             console.error('API Error updating user (PATCH):', error);
@@ -150,7 +149,6 @@ const Regispage = () => {
             line_uid: userId,
             ...basePayload
           };
-          console.log('POST to /api/v1/user:', postPayload);
           const { success, error } = await createUserService(postPayload);
           if (!success) {
             console.error('API Error creating user (POST):', error);

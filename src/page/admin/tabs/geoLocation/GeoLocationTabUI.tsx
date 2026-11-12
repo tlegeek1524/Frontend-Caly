@@ -308,7 +308,7 @@ export const GeoLocationTabUI = ({
               onChange={(e) => setSearchQuery(e.target.value)}
               className="admin-dashboard-search-input"
               allowClear
-              style={{ maxWidth: 280 }}
+              style={{ width: "100%", flex: "1 1 100%" }}
             />
             {/* ตัวเลือกกรองตามจังหวัดที่มีข้อมูล */}
             <Select
@@ -328,12 +328,13 @@ export const GeoLocationTabUI = ({
                 รีเซ็ต
               </Button>
             )}
+            <span
+              className="admin-dashboard-filter-label"
+              style={{ color: "#64748b", fontWeight: 500, marginLeft: "auto" }}
+            >
+              พบ <strong style={{ color: "#1677ff", margin: "0 4px" }}>{pagination?.total ?? filteredLocations.length}</strong> พิกัด
+            </span>
           </>
-        }
-        rightContent={
-          <span className="admin-dashboard-filter-label" style={{ color: "#64748b", fontWeight: 500 }}>
-            พบ <strong style={{ color: "#1677ff", margin: "0 4px" }}>{pagination?.total ?? filteredLocations.length}</strong> พิกัด
-          </span>
         }
       />
 
@@ -411,20 +412,18 @@ export const GeoLocationTabUI = ({
         {/* 2. รายการการ์ดภาพถ่ายอาหารและพิกัดล่าสุด (เรียงจากใหม่ที่สุดไปเก่าที่สุด) */}
         <Col xs={24} lg={9}>
           <Card
-            title={
-              <div className="admin-geo-panel-header">
-                <span className="admin-dashboard-card-title">ภาพถ่ายอาหารและพิกัดล่าสุด</span>
-                <div className="admin-geo-countdown-badge">
-                  <span>รีเฟช {countdown}s</span>
-                  <button
-                    type="button"
-                    onClick={handleManualRefresh}
-                    className="admin-geo-countdown-btn"
-                    aria-label="รีเฟรชข้อมูลทันที"
-                  >
-                    <ReloadOutlined spin={isLoading} style={{ fontSize: 11 }} />
-                  </button>
-                </div>
+            title={<span className="admin-dashboard-card-title">ภาพถ่ายอาหารและพิกัดล่าสุด</span>}
+            extra={
+              <div className="admin-geo-countdown-badge">
+                <span>รีเฟช {countdown}s</span>
+                <button
+                  type="button"
+                  onClick={handleManualRefresh}
+                  className="admin-geo-countdown-btn"
+                  aria-label="รีเฟรชข้อมูลทันที"
+                >
+                  <ReloadOutlined spin={isLoading} style={{ fontSize: 11 }} />
+                </button>
               </div>
             }
             variant="borderless"

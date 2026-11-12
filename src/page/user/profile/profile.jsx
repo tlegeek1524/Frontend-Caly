@@ -65,7 +65,7 @@ const Profile = () => {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-md mx-auto px-4 py-5 space-y-4">
+        <div className="max-w-md mx-auto px-4 py-5 space-y-4 h-auto max-h-none">
           {/* Profile Card */}
           <div className="bg-white rounded-2xl p-5 border border-slate-100/80 shadow-xs text-center">
             {user.picture ? (
@@ -79,8 +79,7 @@ const Profile = () => {
                 <User className="w-10 h-10" />
               </div>
             )}
-            <h3 className="text-base font-bold text-slate-900 mb-0.5">{user.name || 'ผู้ใช้งาน'}</h3>
-            <p className="text-xs text-slate-400">LINE UID: {user.id}</p>
+            <h3 className="text-base font-bold text-slate-900">{user.name || 'ผู้ใช้งาน'}</h3>
           </div>
 
           <LoadingOverlay show={isLoading} message="กำลังโหลดข้อมูล..." />

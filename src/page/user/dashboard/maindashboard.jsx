@@ -2,12 +2,15 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
 import { Doughnut } from "react-chartjs-2";
-import OpenAI from "openai";
 import toast from "react-hot-toast";
+import { message, DatePicker } from "antd";
+import dayjs from "dayjs";
 import BottomNav from "../../../components/BottomNav/BottomNav";
 import LoadingOverlay from "../../../components/Loading/LoadingOverlay";
 import UserHeader from "../../../components/UserHeader/UserHeader";
 import { PDPAConsentModal } from "../../../components/PDPA/PDPAConsentModal";
+import { UnrecognizedFoodModal } from "../../../components/UnrecognizedFoodModal/UnrecognizedFoodModal";
+import { CalendarFireStack } from "../../../components/CalendarFireStack";
 import { 
   createMenuService, 
   getMenusService, 
@@ -17,6 +20,9 @@ import {
 import { getUserService } from "../../../services/user.service";
 import { getCurrentGpsCoordinates, uploadFoodLocationService } from "../../../services/location.service";
 import { getStoredUser } from "../../../utils/sessionAuth";
+import { compressImage } from "../../../utils/imageCompressor";
+import { analyzeFoodImage, isUnrecognizedFood } from "../../../services/aiFoodAnalysis.service";
+import { uploadFoodImage } from "../../../services/imageStorage.service";
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
@@ -47,97 +53,6 @@ const fetchFoodRecords = async (lineUid, selectedDate) => {
   }
 };
 
-// ฟังก์ชันอัพโหลดรูปไป ImgBB
-const uploadImageToImgBB = async (imageFile) => {
-  const apiKey = import.meta.env.VITE_IMGBB_API_KEY;
-
-  try {
-    const formData = new FormData();
-    formData.append("image", imageFile);
-
-    const response = await fetch(
-      `https://api.imgbb.com/1/upload?key=${apiKey}`,
-      {
-        method: "POST",
-        body: formData,
-      },
-    );
-
-    const data = await response.json();
-
-    if (data.success) {
-      return data.data.url; // URL ของรูปที่อัพโหลด
-    } else {
-      throw new Error("Failed to upload image");
-    }
-  } catch (error) {
-    console.error("ImgBB upload error:", error);
-    throw error;
-  }
-};
-
-// ฟังก์ชัน compress รูปภาพ
-const compressImage = async (file, maxSizeMB = 1, maxWidthOrHeight = 1920) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target.result;
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        let width = img.width;
-        let height = img.height;
-
-        // คำนวณขนาดใหม่โดยรักษา aspect ratio
-        if (width > height) {
-          if (width > maxWidthOrHeight) {
-            height *= maxWidthOrHeight / width;
-            width = maxWidthOrHeight;
-          }
-        } else {
-          if (height > maxWidthOrHeight) {
-            width *= maxWidthOrHeight / height;
-            height = maxWidthOrHeight;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // ลด quality จนกว่าจะได้ขนาดที่ต้องการ
-        let quality = 0.9;
-        const tryCompress = () => {
-          canvas.toBlob(
-            (blob) => {
-              if (blob.size > maxSizeMB * 1024 * 1024 && quality > 0.1) {
-                quality -= 0.1;
-                tryCompress();
-              } else {
-                // แปลง blob เป็น file
-                const compressedFile = new File([blob], file.name, {
-                  type: "image/jpeg",
-                  lastModified: Date.now(),
-                });
-                resolve(compressedFile);
-              }
-            },
-            "image/jpeg",
-            quality,
-          );
-        };
-
-        tryCompress();
-      };
-      img.onerror = reject;
-    };
-    reader.onerror = reject;
-  });
-};
-
 const addFoodRecord = async (lineUid, foodData, imageFile, locatRefId = null) => {
   try {
     let imageUrl = "";
@@ -155,8 +70,7 @@ const addFoodRecord = async (lineUid, foodData, imageFile, locatRefId = null) =>
         "MB",
       );
 
-      // อัพโหลดรูปภาพ
-      imageUrl = await uploadImageToImgBB(compressedFile);
+      imageUrl = await uploadFoodImage(compressedFile);
       console.log("Uploaded Image URL/Path:", imageUrl);
     }
 
@@ -195,65 +109,6 @@ const addFoodRecord = async (lineUid, foodData, imageFile, locatRefId = null) =>
   }
 };
 
-// OpenAI GPT Function
-const analyzeFoodImage = async (imageFile) => {
-  try {
-    const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
-    const openai = new OpenAI({
-      apiKey: API_KEY,
-      dangerouslyAllowBrowser: true, // สำหรับใช้ใน browser
-    });
-
-    const base64Image = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(imageFile);
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = (error) => reject(error);
-    });
-
-    const prompt = `วิเคราะห์รูปอาหารนี้และส่งข้อมูลกลับมาในรูปแบบ JSON เท่านั้น:
-{
-  "menu": "ชื่ออาหาร (ภาษาไทย)",
-  "cal": จำนวนแคลอรี่ (ตัวเลข),
-  "protein": จำนวนโปรตีน (กรัม, ตัวเลข),
-  "carb": จำนวนคาร์โบไฮเดรต (กรัม, ตัวเลข),
-  "fat": จำนวนไขมัน (กรัม, ตัวเลข)
-}
-ส่งเฉพาะ JSON เท่านั้น`;
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            {
-              type: "image_url",
-              image_url: {
-                url: base64Image,
-              },
-            },
-          ],
-        },
-      ],
-      max_tokens: 500,
-    });
-
-    const text = response.choices[0].message.content;
-
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    } else {
-      throw new Error("ไม่สามารถแปลง response เป็น JSON ได้");
-    }
-  } catch (error) {
-    console.error("Error:", error);
-    throw error;
-  }
-};
-
 const MainDashboard = () => {
   const navigate = useNavigate();
 
@@ -273,6 +128,7 @@ const MainDashboard = () => {
 
   const [selectedDate, setSelectedDate] = useState(getTodayLocalDate);
   const [displayDate, setDisplayDate] = useState(getTodayLocalDate);
+  const [streakRefreshKey, setStreakRefreshKey] = useState(0);
   const [animatedPercentage, setAnimatedPercentage] = useState(0);
   const [animatedCal, setAnimatedCal] = useState(0);
   const [showCameraModal, setShowCameraModal] = useState(false);
@@ -285,6 +141,7 @@ const MainDashboard = () => {
   const [isViewingDate, setIsViewingDate] = useState(false);
   const [showNoDataModal, setShowNoDataModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showUnrecognizedModal, setShowUnrecognizedModal] = useState(false);
   const [pendingFoodData, setPendingFoodData] = useState(null);
   const [pendingImageFile, setPendingImageFile] = useState(null);
   const [pendingImagePreview, setPendingImagePreview] = useState(null);
@@ -533,13 +390,19 @@ const MainDashboard = () => {
         const foodData = await analyzeFoodImage(file);
         console.log("✅ ผลการวิเคราะห์:", foodData);
 
+        if (isUnrecognizedFood(foodData)) {
+          URL.revokeObjectURL(previewUrl);
+          setShowUnrecognizedModal(true);
+          return;
+        }
+
         setPendingFoodData(foodData);
         setPendingImageFile(file);
         setPendingImagePreview(previewUrl);
         setShowConfirmModal(true);
       } catch (error) {
         console.error("❌ เกิดข้อผิดพลาด:", error);
-        alert("ไม่สามารถวิเคราะห์รูปภาพได้ กรุณาลองใหม่");
+        message.error("ไม่สามารถวิเคราะห์รูปภาพได้ กรุณาลองใหม่");
       } finally {
         setIsAnalyzing(false);
       }
@@ -575,13 +438,19 @@ const MainDashboard = () => {
           const foodData = await analyzeFoodImage(file);
           console.log("✅ ผลการวิเคราะห์:", foodData);
 
+          if (isUnrecognizedFood(foodData)) {
+            URL.revokeObjectURL(previewUrl);
+            setShowUnrecognizedModal(true);
+            return;
+          }
+
           setPendingFoodData(foodData);
           setPendingImageFile(file);
           setPendingImagePreview(previewUrl);
           setShowConfirmModal(true);
         } catch (error) {
           console.error("❌ เกิดข้อผิดพลาด:", error);
-          alert("ไม่สามารถวิเคราะห์รูปภาพได้ กรุณาลองใหม่");
+          message.error("ไม่สามารถวิเคราะห์รูปภาพได้ กรุณาลองใหม่");
         } finally {
           setIsAnalyzing(false);
         }
@@ -641,23 +510,19 @@ const MainDashboard = () => {
       );
 
       if (result) {
-        // แสดง URL ของรูปที่อัพโหลด
-        const uploadedImageUrl = result.fields?.image?.[0]?.url;
-        if (uploadedImageUrl) {
-          alert(`บันทึกข้อมูลสำเร็จ!\n\nURL รูปภาพ:\n${uploadedImageUrl}`);
-        } else {
-          alert("บันทึกข้อมูลสำเร็จ!");
-        }
+        message.success("บันทึกข้อมูลสำเร็จ!");
 
         // รีโหลดข้อมูล
         const records = await fetchFoodRecords(user.id, displayDate);
         setFoodRecords(records);
+        setStreakRefreshKey((k) => k + 1);
+        window.dispatchEvent(new CustomEvent("food-record-updated"));
       } else {
-        alert("บันทึกข้อมูลไม่สำเร็จ กรุณาลองใหม่");
+        message.error("บันทึกข้อมูลไม่สำเร็จ กรุณาลองใหม่");
       }
     } catch (error) {
       console.error("Error saving:", error);
-      alert("เกิดข้อผิดพลาดในการบันทึก");
+      message.error("เกิดข้อผิดพลาดในการบันทึก");
     } finally {
       setLoading(false);
       setPendingFoodData(null);
@@ -725,7 +590,7 @@ const MainDashboard = () => {
       {/* PDPA Consent Modal */}
       <PDPAConsentModal userId={user?.id} />
 
-      <div className="max-w-md mx-auto px-4 py-5 space-y-4">
+      <div className="max-w-md mx-auto px-4 py-5 space-y-4 h-auto max-h-none">
         {/* Profile Card */}
         <div className="bg-white rounded-2xl p-4 border border-slate-100/80 shadow-xs flex items-center gap-3.5">
           <img
@@ -796,7 +661,7 @@ const MainDashboard = () => {
         {/* Nutrition Summary with Chart */}
         <div className="bg-white rounded-2xl p-5 border border-slate-100/80 shadow-xs">
           <div className="text-center mb-4">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">สัดส่วนสารอาหาร</p>
+            <p className="text-xs font-semibold text-slate-400">สัดส่วนสารอาหาร</p>
           </div>
 
           <div className="flex items-center justify-center mb-5 relative">
@@ -841,26 +706,40 @@ const MainDashboard = () => {
           </div>
         </div>
 
+        {/* Calendar Fire Streak */}
+        {user?.id && (
+          <CalendarFireStack
+            lineUid={String(user.id)}
+            selectedDate={displayDate}
+            refreshTrigger={streakRefreshKey}
+            foodRecordsCount={foodRecords.length}
+            onSelectDate={(date) => {
+              setSelectedDate(date);
+              setDisplayDate(date);
+              setIsViewingDate(date !== getTodayLocalDate());
+            }}
+          />
+        )}
+
         {/* Date Filter */}
         <div className="bg-white rounded-2xl p-4 border border-slate-100/80 shadow-xs">
           <label className="block text-xs font-semibold text-slate-700 mb-2">
             เลือกวันที่
           </label>
-          <div className="flex gap-2">
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="flex-1 px-3 py-2 text-sm bg-slate-50 rounded-xl border border-slate-200 text-slate-800 focus:bg-white focus:border-emerald-500 focus:outline-none transition-all"
-            />
-            <button
-              onClick={handleViewDate}
-              disabled={loading}
-              className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 active:scale-[0.98] transition-all disabled:opacity-50 shadow-xs"
-            >
-              ดูข้อมูล
-            </button>
-          </div>
+          <DatePicker
+            value={selectedDate ? dayjs(selectedDate) : null}
+            disabled={loading}
+            allowClear={false}
+            format="DD/MM/YYYY"
+            className="w-full !rounded-xl !py-2 !bg-slate-50 !border-slate-200"
+            onChange={(date) => {
+              if (!date) return;
+              const newDate = date.format("YYYY-MM-DD");
+              setSelectedDate(newDate);
+              setDisplayDate(newDate);
+              setIsViewingDate(newDate !== getTodayLocalDate());
+            }}
+          />
         </div>
       </div>
 
@@ -1001,9 +880,10 @@ const MainDashboard = () => {
               </div>
 
               {/* คำแนะนำ */}
-              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-[12px]">
-                <p className="text-[12px] text-blue-800 leading-relaxed">
-                  <span className="font-bold">💡 หมายเหตุ:</span> หากเครื่องใดไม่สามารถ ใช้การอนุณาตการใช้งานกล้องได้ แก้ไขด้วยการถ่ายรูปด้วยแอปกล้องก่อน และนำรูปมาอัพโหลดจาก เลือกรูปจากแกลเลอรี่แทนครับ
+              <div className="mt-4 p-2.5 bg-blue-50 border border-blue-200 rounded-[12px] grid gap-1 text-[12px] text-blue-800 leading-relaxed">
+                <div className="font-bold">หมายเหตุ</div>
+                <p>
+                  หากเครื่องใดไม่สามารถอนุญาตการใช้งานกล้องได้ แก้ไขด้วยการถ่ายรูปด้วยแอปกล้องก่อน แล้วนำรูปมาอัปโหลดจาก "เลือกรูปจากแกลเลอรี่" แทนครับ
                 </p>
               </div>
             </div>
@@ -1063,28 +943,31 @@ const MainDashboard = () => {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header - Fixed */}
-            <div className="px-6 pt-6 pb-4 flex-shrink-0">
-              <h3 className="text-[20px] font-semibold text-black text-center">
-                ตรวจสอบข้อมูล
+            <div className="px-5 pt-4 pb-2 flex-shrink-0 text-center">
+              <h3 className="text-[18px] font-semibold text-slate-900">
+                ตรวจสอบข้อมูลอาหาร
               </h3>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                ตรวจสอบและแก้ไขค่าที่วิเคราะห์ได้ก่อนบันทึก
+              </p>
             </div>
 
             {/* Content - Scrollable */}
-            <div className="px-6 overflow-y-auto flex-1">
+            <div className="px-5 overflow-y-auto flex-1">
               {/* แสดงรูปภาพ */}
               {pendingImagePreview && (
-                <div className="mb-4">
+                <div className="mb-3">
                   <img
                     src={pendingImagePreview}
                     alt="Food preview"
-                    className="w-full h-48 object-cover rounded-[12px]"
+                    className="w-full h-32 object-cover rounded-[12px]"
                   />
                 </div>
               )}
 
-              <div className="space-y-3 mb-6">
-                <div className="flex flex-col gap-2">
-                  <span className="text-[15px] text-[#8e8e93]">เมนู:</span>
+              <div className="space-y-2.5 mb-3">
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-slate-500">ชื่อเมนูอาหาร</span>
                   <textarea
                     value={pendingFoodData.menu}
                     onChange={(e) =>
@@ -1093,14 +976,15 @@ const MainDashboard = () => {
                         menu: e.target.value,
                       })
                     }
-                    className="text-[15px] font-semibold text-black bg-[#f2f2f7] px-3 py-2 rounded-lg border-0 focus:bg-[#e5e5ea] focus:outline-none w-full resize-none"
-                    rows="2"
+                    className="text-sm font-semibold text-slate-900 bg-slate-100/80 px-3 py-1.5 rounded-lg border-0 focus:bg-slate-100 focus:outline-none w-full resize-none"
+                    rows="1"
                   />
                 </div>
 
-                <div className="flex justify-between items-center">
-                  <span className="text-[15px] text-[#8e8e93]">แคลอรี่:</span>
-                  <div className="flex items-center gap-1">
+                {/* แคลอรี่ */}
+                <div className="flex justify-between items-center pt-2 border-t border-slate-100">
+                  <span className="text-sm font-medium text-slate-600">พลังงานทั้งหมด</span>
+                  <div className="flex items-center gap-1.5">
                     <input
                       type="number"
                       value={pendingFoodData.cal}
@@ -1110,15 +994,16 @@ const MainDashboard = () => {
                           cal: Number(e.target.value),
                         })
                       }
-                      className="text-[15px] font-semibold text-black text-right bg-[#f2f2f7] px-3 py-1 rounded-lg border-0 focus:bg-[#e5e5ea] focus:outline-none w-24"
+                      className="text-base font-bold text-slate-900 text-right tabular-nums bg-slate-100/80 px-3 py-1.5 rounded-lg border-0 focus:bg-slate-100 focus:outline-none w-24"
                     />
-                    <span className="text-[13px] text-[#8e8e93]">kcal</span>
+                    <span className="text-xs font-medium text-slate-400">kcal</span>
                   </div>
                 </div>
 
-                <div className="flex justify-between items-center">
-                  <span className="text-[15px] text-[#8e8e93]">โปรตีน:</span>
-                  <div className="flex items-center gap-1">
+                {/* สารอาหาร 3 ช่อง */}
+                <div className="grid grid-cols-3 gap-3 pt-2 border-t border-slate-100">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs text-slate-500 text-center">โปรตีน (g)</span>
                     <input
                       type="number"
                       value={pendingFoodData.protein}
@@ -1128,15 +1013,12 @@ const MainDashboard = () => {
                           protein: Number(e.target.value),
                         })
                       }
-                      className="text-[15px] font-semibold text-black text-right bg-[#f2f2f7] px-3 py-1 rounded-lg border-0 focus:bg-[#e5e5ea] focus:outline-none w-24"
+                      className="text-sm font-bold text-slate-900 text-center tabular-nums bg-slate-100/80 px-2 py-1.5 rounded-lg border-0 focus:bg-slate-100 focus:outline-none w-full"
                     />
-                    <span className="text-[13px] text-[#8e8e93]">g</span>
                   </div>
-                </div>
 
-                <div className="flex justify-between items-center">
-                  <span className="text-[15px] text-[#8e8e93]">คาร์บ:</span>
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs text-slate-500 text-center">คาร์บ (g)</span>
                     <input
                       type="number"
                       value={pendingFoodData.carb}
@@ -1146,15 +1028,12 @@ const MainDashboard = () => {
                           carb: Number(e.target.value),
                         })
                       }
-                      className="text-[15px] font-semibold text-black text-right bg-[#f2f2f7] px-3 py-1 rounded-lg border-0 focus:bg-[#e5e5ea] focus:outline-none w-24"
+                      className="text-sm font-bold text-slate-900 text-center tabular-nums bg-slate-100/80 px-2 py-1.5 rounded-lg border-0 focus:bg-slate-100 focus:outline-none w-full"
                     />
-                    <span className="text-[13px] text-[#8e8e93]">g</span>
                   </div>
-                </div>
 
-                <div className="flex justify-between items-center">
-                  <span className="text-[15px] text-[#8e8e93]">ไขมัน:</span>
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs text-slate-500 text-center">ไขมัน (g)</span>
                     <input
                       type="number"
                       value={pendingFoodData.fat}
@@ -1164,9 +1043,8 @@ const MainDashboard = () => {
                           fat: Number(e.target.value),
                         })
                       }
-                      className="text-[15px] font-semibold text-black text-right bg-[#f2f2f7] px-3 py-1 rounded-lg border-0 focus:bg-[#e5e5ea] focus:outline-none w-24"
+                      className="text-sm font-bold text-slate-900 text-center tabular-nums bg-slate-100/80 px-2 py-1.5 rounded-lg border-0 focus:bg-slate-100 focus:outline-none w-full"
                     />
-                    <span className="text-[13px] text-[#8e8e93]">g</span>
                   </div>
                 </div>
               </div>
@@ -1190,6 +1068,13 @@ const MainDashboard = () => {
           </div>
         </div>
       )}
+
+      {/* Unrecognized Food Modal Component */}
+      <UnrecognizedFoodModal
+        open={showUnrecognizedModal}
+        onClose={() => setShowUnrecognizedModal(false)}
+        onRetry={() => setShowCameraModal(true)}
+      />
 
       {/* Transparent Loading Overlay */}
       <LoadingOverlay

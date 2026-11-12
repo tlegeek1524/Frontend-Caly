@@ -1,7 +1,8 @@
 import { Card, Table, Tag, Button, Input, Space, Tooltip, Select } from "antd";
-import { SearchOutlined, DownloadOutlined, LockOutlined, UnlockOutlined, UserOutlined } from "@ant-design/icons";
+import { SearchOutlined, DownloadOutlined, SaveOutlined, LockOutlined, UnlockOutlined, UserOutlined } from "@ant-design/icons";
 import type { AdminUser, RoleDropdownItem, UserRole } from "../../../../types/admin";
 import { AdminFilterBar } from "../../components/AdminFilterBar";
+import { getStoredUser } from "../../../../utils/sessionAuth";
 
 type AdminUserManagementTabProps = {
   users: AdminUser[];
@@ -55,6 +56,25 @@ export const UserManagementTabUI = ({
       </Tag>
     )
   }));
+
+  const storedUser = getStoredUser();
+  const currentLineUid = String(
+    storedUser?.id || storedUser?.line_uid || storedUser?.userId || ""
+  );
+  const currentAccountNo = String(storedUser?.accountno || "");
+
+  const visibleUsers = users.filter((u) => {
+    if (currentLineUid && u.line_uid === currentLineUid) return false;
+    if (currentAccountNo && u.accountno === currentAccountNo) return false;
+    return true;
+  });
+
+  const hasRoleChanges = visibleUsers.some((user) => {
+    const key = user.accountno || user.line_uid || "";
+    const pendingRole = tempRoles[key];
+    const originalStatus = (user.is_status || "USER").toUpperCase();
+    return Boolean(pendingRole && pendingRole.toUpperCase() !== originalStatus);
+  });
 
   const columns = [
     {
@@ -119,52 +139,6 @@ export const UserManagementTabUI = ({
           />
         );
       }
-    },
-    {
-      title: "จัดการบัญชี",
-      key: "actions",
-      width: 120,
-      align: "center" as const,
-      render: (_: unknown, record: AdminUser) => {
-        const isMasterAdmin =
-          record.accountno === "CALY001" ||
-          record.accountno === "ACC-001" ||
-          record.line_uid === "mock-admin-1";
-
-        if (isMasterAdmin) {
-          return (
-            <span style={{ fontSize: 11, color: "#9ca3af" }}>
-              ระบบหลัก
-            </span>
-          );
-        }
-
-        const isBanned = Boolean(record.is_banned);
-
-        return (
-          <Tooltip title={isBanned ? "คลิกเพื่อปลดล็อคผู้ใช้งาน (Unlock)" : "คลิกเพื่อระงับการใช้งาน (Lock)"}>
-            <Button
-              type={isBanned ? "primary" : "default"}
-              danger={!isBanned}
-              size="middle"
-              shape="circle"
-              icon={isBanned ? <LockOutlined /> : <UnlockOutlined />}
-              onClick={() => {
-                if (onToggleLockUser) {
-                  onToggleLockUser(record.accountno || "", isBanned);
-                } else {
-                  onOpenBanDialog(record.accountno || "");
-                }
-              }}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center"
-              }}
-            />
-          </Tooltip>
-        );
-      }
     }
   ];
 
@@ -181,30 +155,43 @@ export const UserManagementTabUI = ({
               onChange={(e) => onSearchChange(e.target.value)}
               className="admin-dashboard-search-input"
               allowClear
-              style={{ maxWidth: 280 }}
+              style={{ width: "100%", flex: "1 1 100%" }}
             />
-            <span className="admin-dashboard-filter-label" style={{ color: "#64748b", fontWeight: 500 }}>
-              รวม <strong style={{ color: "#1677ff", margin: "0 4px" }}>{users.length}</strong> บัญชี
+            <Space wrap>
+              {onExportCSV && (
+                <Tooltip title="ส่งออก CSV">
+                  <Button
+                    icon={<DownloadOutlined />}
+                    onClick={onExportCSV}
+                    aria-label="ส่งออก CSV"
+                  />
+                </Tooltip>
+              )}
+              {hasRoleChanges && (
+                <Tooltip title="บันทึกสิทธิ์">
+                  <Button
+                    type="primary"
+                    icon={<SaveOutlined />}
+                    onClick={onSaveRoles}
+                    loading={isSaving}
+                    aria-label="บันทึกสิทธิ์"
+                  />
+                </Tooltip>
+              )}
+            </Space>
+            <span
+              className="admin-dashboard-filter-label"
+              style={{ color: "#64748b", fontWeight: 500, marginLeft: "auto" }}
+            >
+              รวม <strong style={{ color: "#1677ff", margin: "0 4px" }}>{visibleUsers.length}</strong> บัญชี
             </span>
           </>
-        }
-        rightContent={
-          <Space wrap>
-            {onExportCSV && (
-              <Button icon={<DownloadOutlined />} onClick={onExportCSV}>
-                ส่งออก CSV
-              </Button>
-            )}
-            <Button type="primary" onClick={onSaveRoles} loading={isSaving}>
-              บันทึกสิทธิ์
-            </Button>
-          </Space>
         }
       />
 
       <Card variant="borderless" className="admin-dashboard-card" styles={{ body: { padding: "12px 16px" } }}>
         <Table
-          dataSource={users}
+          dataSource={visibleUsers}
           columns={columns}
           rowKey={(record) => record.accountno || record.line_uid || record.email || ""}
           loading={isLoading}

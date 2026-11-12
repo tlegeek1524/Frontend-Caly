@@ -14,6 +14,14 @@ type PDPAConsentModalProps = {
   onConsentAccepted?: (template: PDPATemplate) => void;
 };
 
+const sanitizeHtml = (html: string): string => {
+  return html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, "")
+    .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(/javascript:/gi, "");
+};
+
 export const PDPAConsentModal = ({
   isOpen: externalIsOpen,
   userId,
@@ -43,7 +51,7 @@ export const PDPAConsentModal = ({
         if (!isMounted) return;
 
         const localKey = `pdpa_consent_v_${activeTemplate.version}`;
-        const isAcceptedLocal = localStorage.getItem(localKey) === "true";
+        const isAcceptedLocal = sessionStorage.getItem(localKey) === "true";
 
         if (!isAcceptedServer && !isAcceptedLocal) {
           setInternalOpen(true);
@@ -95,8 +103,8 @@ export const PDPAConsentModal = ({
       });
 
       const localKey = `pdpa_consent_v_${template.version}`;
-      localStorage.setItem(localKey, "true");
-      localStorage.setItem("gps_consent", "true");
+      sessionStorage.setItem(localKey, "true");
+      sessionStorage.setItem("gps_consent", "true");
 
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
@@ -139,7 +147,7 @@ export const PDPAConsentModal = ({
           )}
           <div
             className="pdpa-modal-content-box"
-            dangerouslySetInnerHTML={{ __html: template.content_html }}
+            dangerouslySetInnerHTML={{ __html: sanitizeHtml(template.content_html) }}
           />
         </div>
 
