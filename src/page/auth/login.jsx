@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { User, Lock, Loader2, Eye, EyeOff } from "lucide-react";
 import { Snackbar, Alert } from "@mui/material";
 import { fetchWithAuth } from "../../utils/api";
+import { setStoredToken, setStoredUser } from "../../utils/sessionAuth";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -29,10 +30,8 @@ const Login = () => {
       displayName: "Admin Caly"
     };
 
-    sessionStorage.setItem("access_token", "mock-access-token");
-    sessionStorage.setItem("user", JSON.stringify(mockUser));
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("user");
+    setStoredToken("mock-access-token");
+    setStoredUser(mockUser);
     navigate("/admin-dashboard");
   };
 
@@ -51,10 +50,8 @@ const Login = () => {
       const result = await response.json();
 
       if (response.ok && (result.status === 200 || result.status === "200")) {
-        sessionStorage.setItem("access_token", result.data.access_token);
-        sessionStorage.setItem("user", JSON.stringify(result.data.user));
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("user");
+        setStoredToken(result.data.access_token);
+        setStoredUser(result.data.user);
         setSnackbar({ open: true, message: "เข้าสู่ระบบสำเร็จ", severity: "success" });
         setTimeout(() => navigate("/dashboard"), 1000);
       } else {

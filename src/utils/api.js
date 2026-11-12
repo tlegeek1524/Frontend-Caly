@@ -3,7 +3,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 50;
 
 export const fetchWithAuth = async (url, options = {}) => {
-  const token = sessionStorage.getItem("access_token");
+  const token = localStorage.getItem("access_token") || sessionStorage.getItem("access_token");
   const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
   
   // Prepends base URL if url is a relative path

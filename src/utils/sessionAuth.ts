@@ -7,12 +7,11 @@ export const ALLOWED_ADMIN_ROLES = ["ADMIN", "DEV", "STAFF"];
 
 export const getStoredUser = (): Record<string, unknown> | null => {
   try {
-    let userStr = sessionStorage.getItem("user");
+    let userStr = localStorage.getItem("user");
     if (!userStr) {
-      userStr = localStorage.getItem("user");
+      userStr = sessionStorage.getItem("user");
       if (userStr) {
-        sessionStorage.setItem("user", userStr);
-        localStorage.removeItem("user");
+        localStorage.setItem("user", userStr);
       }
     }
 
@@ -24,12 +23,11 @@ export const getStoredUser = (): Record<string, unknown> | null => {
 };
 
 export const getStoredToken = (): string | null => {
-  let token = sessionStorage.getItem("access_token");
+  let token = localStorage.getItem("access_token");
   if (!token) {
-    token = localStorage.getItem("access_token");
+    token = sessionStorage.getItem("access_token");
     if (token) {
-      sessionStorage.setItem("access_token", token);
-      localStorage.removeItem("access_token");
+      localStorage.setItem("access_token", token);
     }
   }
 
@@ -37,7 +35,7 @@ export const getStoredToken = (): string | null => {
     const user = getStoredUser();
     if (user && typeof user.access_token === "string") {
       token = user.access_token;
-      sessionStorage.setItem("access_token", token);
+      localStorage.setItem("access_token", token);
     }
   }
 
@@ -46,20 +44,20 @@ export const getStoredToken = (): string | null => {
 
 export const setStoredUser = (user: Record<string, unknown> | null): void => {
   if (user) {
-    sessionStorage.setItem("user", JSON.stringify(user));
+    localStorage.setItem("user", JSON.stringify(user));
   } else {
+    localStorage.removeItem("user");
     sessionStorage.removeItem("user");
   }
-  localStorage.removeItem("user");
 };
 
 export const setStoredToken = (token: string | null): void => {
   if (token) {
-    sessionStorage.setItem("access_token", token);
+    localStorage.setItem("access_token", token);
   } else {
+    localStorage.removeItem("access_token");
     sessionStorage.removeItem("access_token");
   }
-  localStorage.removeItem("access_token");
 };
 
 export const clearStoredAuth = (): void => {
