@@ -1,23 +1,27 @@
 const cache = new Map();
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_CACHE_ENTRIES = 50;
 
 export const fetchWithAuth = async (url, options = {}) => {
-  const token = localStorage.getItem("access_token");
+  const token = sessionStorage.getItem("access_token");
   const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
   
   // Prepends base URL if url is a relative path
   const fullUrl = url.startsWith("http") ? url : `${API_URL}${url.startsWith("/") ? "" : "/"}${url}`;
 
-  // Simple caching logic
+  // Simple caching logic with TTL and max size bound
   const cacheKey = `${fullUrl}-${JSON.stringify(options)}`;
   if (options.useCache && cache.has(cacheKey)) {
-    const cachedData = cache.get(cacheKey);
-    // Return a mock response object that behaves like a real one
-    return {
-      ok: true,
-      status: 200,
-      json: async () => JSON.parse(JSON.stringify(cachedData)), // Return a copy
-      clone: () => ({ json: async () => JSON.parse(JSON.stringify(cachedData)) })
-    };
+    const cachedEntry = cache.get(cacheKey);
+    if (Date.now() - cachedEntry.timestamp < CACHE_TTL_MS) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => JSON.parse(JSON.stringify(cachedEntry.data)),
+        clone: () => ({ json: async () => JSON.parse(JSON.stringify(cachedEntry.data)) })
+      };
+    }
+    cache.delete(cacheKey);
   }
 
   const headers = {
@@ -35,8 +39,10 @@ export const fetchWithAuth = async (url, options = {}) => {
   });
 
   if (response.status === 401 && !url.includes("/auth/login")) {
-    localStorage.clear();
-    window.location.href = "/login";
+    sessionStorage.clear();
+    localStorage.removeItem("user");
+    localStorage.removeItem("access_token");
+    window.location.href = "/linelogin";
     return null;
   }
 
@@ -44,7 +50,11 @@ export const fetchWithAuth = async (url, options = {}) => {
   if (options.useCache && response.ok) {
     const clonedResponse = response.clone();
     const data = await clonedResponse.json();
-    cache.set(cacheKey, data);
+    if (cache.size >= MAX_CACHE_ENTRIES) {
+      const oldestKey = cache.keys().next().value;
+      cache.delete(oldestKey);
+    }
+    cache.set(cacheKey, { data, timestamp: Date.now() });
   }
 
   return response;

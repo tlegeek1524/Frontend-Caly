@@ -10,6 +10,7 @@ import {
   createUserService, 
   updateUserService 
 } from '../../../services/user.service';
+import { getStoredUser, setStoredUser } from '../../../utils/sessionAuth';
 
 const Regispage = () => {
   const navigate = useNavigate();
@@ -34,14 +35,15 @@ const Regispage = () => {
   // ดึงข้อมูลเดิมของผู้ใช้เมื่อเปิดหน้า
   useEffect(() => {
     const loadExistingData = async () => {
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      if (!user.id) {
+      const user = getStoredUser() || {};
+      const userId = user.id || user.line_uid;
+      if (!userId) {
         setIsLoadingData(false);
         return;
       }
 
       try {
-        const { success, data: record } = await getUserService(user.id);
+        const { success, data: record } = await getUserService(userId);
         if (success && record) {
           if (record.gender || record.weight || record.cal) {
             setIsExistingUser(true);
@@ -111,8 +113,9 @@ const Regispage = () => {
     console.log('Form data:', formData);
     
     // บันทึกข้อมูลผ่าน API
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    if (user.id) {
+    const user = getStoredUser() || {};
+    const userId = user.id || user.line_uid;
+    if (userId) {
       try {
         const tdeeValue = Number(editableTDEE);
         
@@ -134,26 +137,24 @@ const Regispage = () => {
         };
 
         if (isExistingUser) {
-          console.log('PATCH to /api/v1/user/' + user.id, basePayload);
-          const { success, error } = await updateUserService(user.id, basePayload);
+          const { success, error } = await updateUserService(userId, basePayload);
           if (!success) {
             console.error('API Error updating user (PATCH):', error);
             alert('อัปเดตข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
           } else {
-            console.log('User data updated successfully via PATCH');
+            setStoredUser({ ...user, ...basePayload });
           }
         } else {
           const postPayload = {
-            line_uid: user.id,
+            line_uid: userId,
             ...basePayload
           };
-          console.log('POST to /api/v1/user:', postPayload);
           const { success, error } = await createUserService(postPayload);
           if (!success) {
             console.error('API Error creating user (POST):', error);
             alert('บันทึกข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
           } else {
-            console.log('User data created successfully via POST');
+            setStoredUser({ ...user, ...basePayload });
           }
         }
       } catch (error) {
@@ -429,7 +430,7 @@ const Regispage = () => {
           <button 
             type="submit" 
             disabled={isCalculating}
-            className="w-full py-4 text-[17px] font-semibold text-white bg-gradient-to-r from-green-400 to-emerald-500 rounded-[12px] hover:from-green-500 hover:to-emerald-600 active:scale-[0.98] transition-all duration-200 focus:outline-none shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-3.5 text-base font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 active:scale-[0.98] transition-all duration-200 focus:outline-none shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isCalculating ? (
               <span className="flex items-center justify-center gap-2">
@@ -449,65 +450,66 @@ const Regispage = () => {
 
       {/* Popup Modal */}
       {showPopup && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fadeIn px-4 py-4 overflow-y-auto">
-          <div className="bg-white rounded-[20px] max-w-md w-full shadow-2xl animate-slideUp overflow-hidden my-auto max-h-[90vh] flex flex-col">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 animate-fadeIn px-4 py-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-sm w-full shadow-xl border border-slate-100 animate-slideUp overflow-hidden my-auto max-h-[90vh] flex flex-col">
             {/* Header - Fixed */}
-            <div className="bg-gradient-to-r from-green-400 to-emerald-500 px-6 py-5 text-center flex-shrink-0">
-              <h2 className="text-[24px] font-bold text-white mb-1">ผลการคำนวณ</h2>
-              <p className="text-[15px] text-white/90">คุณสามารถแก้ไขค่า TDEE ได้</p>
+            <div className="px-5 py-4 border-b border-slate-100 text-center flex-shrink-0">
+              <h2 className="text-lg font-bold text-slate-900 mb-0.5">ผลการคำนวณ TDEE</h2>
+              <p className="text-xs text-slate-500">คุณสามารถปรับเปลี่ยนเป้าหมายพลังงานได้ตามต้องการ</p>
             </div>
 
             {/* Content - Scrollable */}
-            <div className="p-6 space-y-4 overflow-y-auto flex-1">
+            <div className="p-5 space-y-3.5 overflow-y-auto flex-1">
               {/* BMR - Read Only */}
-              <div className="bg-[#f2f2f7] rounded-[12px] p-4">
-                <label className="block text-[13px] text-[#8e8e93] mb-2">BMR (อัตราการเผาผลาญพื้นฐาน)</label>
-                <div className="text-[28px] font-bold text-black">
-                  {result?.bmr.toLocaleString()} <span className="text-[17px] text-[#8e8e93] font-normal">kcal/วัน</span>
+              <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-100">
+                <label className="block text-xs text-slate-500 mb-1">BMR (อัตราการเผาผลาญพื้นฐาน)</label>
+                <div className="text-xl font-bold text-slate-900">
+                  {result?.bmr.toLocaleString()} <span className="text-xs text-slate-500 font-normal">kcal/วัน</span>
                 </div>
               </div>
 
               {/* TDEE - Editable */}
-              <div className="bg-[#f2f2f7] rounded-[12px] p-4">
-                <label className="block text-[13px] text-[#8e8e93] mb-2">TDEE (ความต้องการพลังงานรายวัน)</label>
-                <input 
-                  type="number" 
-                  value={editableTDEE}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setEditableTDEE(value === '' ? '' : parseInt(value));
-                  }}
-                  onFocus={(e) => e.target.select()}
-                  className="w-full text-[28px] font-bold text-green-500 bg-white rounded-lg px-4 py-3 border-2 border-green-400 focus:border-green-500 focus:outline-none transition-all duration-200"
-                  placeholder="0"
-                  min="0"
-                />
-                <p className="text-[13px] text-[#8e8e93] mt-2">
-                  คุณสามารถปรับค่านี้ตามความต้องการของคุณได้
+              <div className="bg-emerald-50/60 rounded-xl p-3.5 border border-emerald-100">
+                <label className="block text-xs font-medium text-emerald-800 mb-1.5">TDEE (เป้าหมายพลังงานต่อวัน)</label>
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="number" 
+                    value={editableTDEE}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setEditableTDEE(value === '' ? '' : parseInt(value));
+                    }}
+                    onFocus={(e) => e.target.select()}
+                    className="w-full text-2xl font-extrabold text-emerald-700 bg-white rounded-lg px-3 py-2 border border-emerald-300 focus:border-emerald-500 focus:outline-none transition-all"
+                    placeholder="0"
+                    min="0"
+                  />
+                  <span className="text-xs font-semibold text-emerald-800 whitespace-nowrap">kcal/วัน</span>
+                </div>
+                <p className="text-[11px] text-emerald-700/80 mt-1.5">
+                  แนะนำปรับให้อยู่ในช่วงที่สามารถรับประทานได้อย่างสม่ำเสมอ
                 </p>
               </div>
 
               {/* Info */}
-              <div className="bg-green-50 border border-green-200 rounded-[12px] p-4">
-                <p className="text-[15px] text-green-800 leading-relaxed">
-                  <span className="font-bold">Tips:</span> คุณไม่ควรกินน้อยเกินหรือมากเกินจากค่า BMR ที่แนะนำของคุณเกิน <span className="font-bold">±500 kcal</span> ต่อวัน
-                </p>
+              <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 text-xs text-slate-600 leading-relaxed">
+                <span className="font-semibold text-slate-800">คำแนะนำ:</span> ไม่ควรบริโภคน้อยกว่าค่า BMR เพื่อสุขภาพและระบบเผาผลาญในระยะยาว
               </div>
             </div>
 
             {/* Actions - Fixed */}
-            <div className="px-6 pb-6 flex gap-3 flex-shrink-0 bg-white border-t border-[#e5e5ea] pt-4">
+            <div className="px-5 pb-5 flex gap-2.5 flex-shrink-0 bg-white border-t border-slate-100 pt-3.5">
               <button
                 onClick={handleClosePopup}
-                className="flex-1 py-3 text-[17px] font-semibold text-[#8e8e93] bg-[#f2f2f7] rounded-[12px] hover:bg-[#e5e5ea] active:scale-[0.98] transition-all duration-200"
+                className="flex-1 py-2.5 text-xs font-semibold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 active:scale-95 transition-all"
               >
                 ยกเลิก
               </button>
               <button
                 onClick={handleConfirm}
-                className="flex-1 py-3 text-[17px] font-semibold text-white bg-gradient-to-r from-green-400 to-emerald-500 rounded-[12px] hover:from-green-500 hover:to-emerald-600 active:scale-[0.98] transition-all duration-200 shadow-md"
+                className="flex-1 py-2.5 text-xs font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 active:scale-95 transition-all shadow-xs"
               >
-                ตกลง
+                บันทึกค่า TDEE
               </button>
             </div>
           </div>

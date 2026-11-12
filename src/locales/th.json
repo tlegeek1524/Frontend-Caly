@@ -1,0 +1,37 @@
+{
+  "admin": {
+    "dashboard": "Dashboard",
+    "overview": "ภาพรวม",
+    "map": "แผนที่",
+    "users": "สิทธิ์",
+    "auditLogs": "Log เข้าใช้",
+    "eventLogs": "Log เหตุการณ์",
+    "profile": "โปรไฟล์",
+    "overviewTitle": "ภาพรวม & ทรัพยากร",
+    "geoTitle": "แผนที่พิกัดภาพถ่าย",
+    "userMgmtTitle": "จัดการผู้ใช้งาน & สิทธิ์",
+    "auditLogsTitle": "บันทึกการเข้าใช้งาน (Audit Logs)",
+    "eventLogsTitle": "บันทึกเหตุการณ์ (Event Logs)",
+    "exportCsv": "ส่งออก CSV",
+    "saveRoles": "บันทึกสิทธิ์",
+    "reset": "รีเซ็ต",
+    "search": "ค้นหา...",
+    "logout": "ออกจากระบบ",
+    "totalUsers": "ผู้ใช้งาน",
+    "totalPhotos": "รูปภาพสะสม",
+    "storage": "พื้นที่เก็บข้อมูล",
+    "serverLoad": "ภาระเครื่องแม่ข่าย",
+    "allProvinces": "ทุกจังหวัดที่มีข้อมูล",
+    "latest": "ล่าสุด",
+    "recordsFound": "รายการ",
+    "coordsFound": "พิกัด"
+  },
+  "common": {
+    "success": "สำเร็จ",
+    "error": "ข้อผิดพลาด",
+    "cancel": "ยกเลิก",
+    "confirm": "ยืนยัน",
+    "lightMode": "โหมดสว่าง",
+    "darkMode": "โหมดมืด"
+  }
+}

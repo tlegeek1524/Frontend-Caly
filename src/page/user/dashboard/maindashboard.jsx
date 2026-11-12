@@ -2,9 +2,15 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
 import { Doughnut } from "react-chartjs-2";
-import OpenAI from "openai";
+import toast from "react-hot-toast";
+import { message, DatePicker } from "antd";
+import dayjs from "dayjs";
 import BottomNav from "../../../components/BottomNav/BottomNav";
 import LoadingOverlay from "../../../components/Loading/LoadingOverlay";
+import UserHeader from "../../../components/UserHeader/UserHeader";
+import { PDPAConsentModal } from "../../../components/PDPA/PDPAConsentModal";
+import { UnrecognizedFoodModal } from "../../../components/UnrecognizedFoodModal/UnrecognizedFoodModal";
+import { CalendarFireStack } from "../../../components/CalendarFireStack";
 import { 
   createMenuService, 
   getMenusService, 
@@ -12,6 +18,11 @@ import {
   calculateDailyNutrition 
 } from "../../../services/menu.service";
 import { getUserService } from "../../../services/user.service";
+import { getCurrentGpsCoordinates, uploadFoodLocationService } from "../../../services/location.service";
+import { getStoredUser } from "../../../utils/sessionAuth";
+import { compressImage } from "../../../utils/imageCompressor";
+import { analyzeFoodImage, isUnrecognizedFood } from "../../../services/aiFoodAnalysis.service";
+import { uploadFoodImage } from "../../../services/imageStorage.service";
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
@@ -42,98 +53,7 @@ const fetchFoodRecords = async (lineUid, selectedDate) => {
   }
 };
 
-// ฟังก์ชันอัพโหลดรูปไป ImgBB
-const uploadImageToImgBB = async (imageFile) => {
-  const apiKey = import.meta.env.VITE_IMGBB_API_KEY;
-
-  try {
-    const formData = new FormData();
-    formData.append("image", imageFile);
-
-    const response = await fetch(
-      `https://api.imgbb.com/1/upload?key=${apiKey}`,
-      {
-        method: "POST",
-        body: formData,
-      },
-    );
-
-    const data = await response.json();
-
-    if (data.success) {
-      return data.data.url; // URL ของรูปที่อัพโหลด
-    } else {
-      throw new Error("Failed to upload image");
-    }
-  } catch (error) {
-    console.error("ImgBB upload error:", error);
-    throw error;
-  }
-};
-
-// ฟังก์ชัน compress รูปภาพ
-const compressImage = async (file, maxSizeMB = 1, maxWidthOrHeight = 1920) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target.result;
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        let width = img.width;
-        let height = img.height;
-
-        // คำนวณขนาดใหม่โดยรักษา aspect ratio
-        if (width > height) {
-          if (width > maxWidthOrHeight) {
-            height *= maxWidthOrHeight / width;
-            width = maxWidthOrHeight;
-          }
-        } else {
-          if (height > maxWidthOrHeight) {
-            width *= maxWidthOrHeight / height;
-            height = maxWidthOrHeight;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // ลด quality จนกว่าจะได้ขนาดที่ต้องการ
-        let quality = 0.9;
-        const tryCompress = () => {
-          canvas.toBlob(
-            (blob) => {
-              if (blob.size > maxSizeMB * 1024 * 1024 && quality > 0.1) {
-                quality -= 0.1;
-                tryCompress();
-              } else {
-                // แปลง blob เป็น file
-                const compressedFile = new File([blob], file.name, {
-                  type: "image/jpeg",
-                  lastModified: Date.now(),
-                });
-                resolve(compressedFile);
-              }
-            },
-            "image/jpeg",
-            quality,
-          );
-        };
-
-        tryCompress();
-      };
-      img.onerror = reject;
-    };
-    reader.onerror = reject;
-  });
-};
-
-const addFoodRecord = async (lineUid, foodData, imageFile) => {
+const addFoodRecord = async (lineUid, foodData, imageFile, locatRefId = null) => {
   try {
     let imageUrl = "";
     if (imageFile) {
@@ -150,8 +70,7 @@ const addFoodRecord = async (lineUid, foodData, imageFile) => {
         "MB",
       );
 
-      // อัพโหลดรูปภาพ
-      imageUrl = await uploadImageToImgBB(compressedFile);
+      imageUrl = await uploadFoodImage(compressedFile);
       console.log("Uploaded Image URL/Path:", imageUrl);
     }
 
@@ -166,7 +85,8 @@ const addFoodRecord = async (lineUid, foodData, imageFile) => {
       image_url: imageUrl || "",
       runnum: "1",
       mash: foodData.mash || "lunch",
-      eat_percent: 100
+      eat_percent: 100,
+      ...(locatRefId ? { locat_ref_id: locatRefId } : {})
     };
 
     const { success, data, error } = await createMenuService(payload);
@@ -189,75 +109,12 @@ const addFoodRecord = async (lineUid, foodData, imageFile) => {
   }
 };
 
-// OpenAI GPT Function
-const analyzeFoodImage = async (imageFile) => {
-  try {
-    const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
-    const openai = new OpenAI({
-      apiKey: API_KEY,
-      dangerouslyAllowBrowser: true, // สำหรับใช้ใน browser
-    });
-
-    const base64Image = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(imageFile);
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = (error) => reject(error);
-    });
-
-    const prompt = `วิเคราะห์รูปอาหารนี้และส่งข้อมูลกลับมาในรูปแบบ JSON เท่านั้น:
-{
-  "menu": "ชื่ออาหาร (ภาษาไทย)",
-  "cal": จำนวนแคลอรี่ (ตัวเลข),
-  "protein": จำนวนโปรตีน (กรัม, ตัวเลข),
-  "carb": จำนวนคาร์โบไฮเดรต (กรัม, ตัวเลข),
-  "fat": จำนวนไขมัน (กรัม, ตัวเลข)
-}
-ส่งเฉพาะ JSON เท่านั้น`;
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            {
-              type: "image_url",
-              image_url: {
-                url: base64Image,
-              },
-            },
-          ],
-        },
-      ],
-      max_tokens: 500,
-    });
-
-    const text = response.choices[0].message.content;
-
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    } else {
-      throw new Error("ไม่สามารถแปลง response เป็น JSON ได้");
-    }
-  } catch (error) {
-    console.error("Error:", error);
-    throw error;
-  }
-};
-
 const MainDashboard = () => {
   const navigate = useNavigate();
 
-  // ดึงข้อมูล user จาก localStorage (จาก LINE Login)
+  // ดึงข้อมูล user จาก sessionStorage (จาก LINE Login)
   const user = React.useMemo(() => {
-    const userStr = localStorage.getItem("user");
-    if (userStr) {
-      return JSON.parse(userStr);
-    }
-    return null;
+    return getStoredUser();
   }, []);
 
   // ดึงวันที่ปัจจุบันตาม Local Timezone (YYYY-MM-DD)
@@ -271,6 +128,7 @@ const MainDashboard = () => {
 
   const [selectedDate, setSelectedDate] = useState(getTodayLocalDate);
   const [displayDate, setDisplayDate] = useState(getTodayLocalDate);
+  const [streakRefreshKey, setStreakRefreshKey] = useState(0);
   const [animatedPercentage, setAnimatedPercentage] = useState(0);
   const [animatedCal, setAnimatedCal] = useState(0);
   const [showCameraModal, setShowCameraModal] = useState(false);
@@ -283,53 +141,14 @@ const MainDashboard = () => {
   const [isViewingDate, setIsViewingDate] = useState(false);
   const [showNoDataModal, setShowNoDataModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showUnrecognizedModal, setShowUnrecognizedModal] = useState(false);
   const [pendingFoodData, setPendingFoodData] = useState(null);
   const [pendingImageFile, setPendingImageFile] = useState(null);
   const [pendingImagePreview, setPendingImagePreview] = useState(null);
-  const [showPDPA, setShowPDPA] = useState(false);
   const [showLiveCamera, setShowLiveCamera] = useState(false);
   const [cameraStream, setCameraStream] = useState(null);
   const videoRef = React.useRef(null);
   const canvasRef = React.useRef(null);
-
-  // ล็อคการเลื่อนหน้าเมื่อ PDPA popup เปิด
-  useEffect(() => {
-    if (showPDPA) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-    
-    return () => {
-      document.body.style.overflow = 'unset';
-    };
-  }, [showPDPA]);
-
-  const handleAcceptPDPA = async () => {
-    if (!user?.id) return;
-
-    try {
-      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3333";
-      await fetch(`${apiUrl.replace(/\/$/, "")}/api/pdpa-consent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: user.id.toString() }),
-      }).catch((e) => console.error("PDPA consent upload failed", e));
-    } catch (e) {
-      console.error(e);
-    }
-
-    localStorage.setItem("gps_consent", "true");
-    setShowPDPA(false);
-    
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => console.log("GPS initialized successfully"),
-        (err) => console.warn("GPS initialization rejected/failed", err),
-        { enableHighAccuracy: true, timeout: 5000 },
-      );
-    }
-  };
 
   // ถ้าไม่มี user ให้กลับไปหน้า login
   useEffect(() => {
@@ -502,12 +321,6 @@ const MainDashboard = () => {
     return () => clearInterval(timer);
   }, [totalCal, caloriePercentage]);
 
-  const handleDelete = (id) => {
-    if (window.confirm("คุณต้องการลบรายการนี้หรือไม่?")) {
-      console.log("Delete item:", id);
-    }
-  };
-
   const handleOpenCamera = () => {
     setShowCameraModal(true);
   };
@@ -577,13 +390,19 @@ const MainDashboard = () => {
         const foodData = await analyzeFoodImage(file);
         console.log("✅ ผลการวิเคราะห์:", foodData);
 
+        if (isUnrecognizedFood(foodData)) {
+          URL.revokeObjectURL(previewUrl);
+          setShowUnrecognizedModal(true);
+          return;
+        }
+
         setPendingFoodData(foodData);
         setPendingImageFile(file);
         setPendingImagePreview(previewUrl);
         setShowConfirmModal(true);
       } catch (error) {
         console.error("❌ เกิดข้อผิดพลาด:", error);
-        alert("ไม่สามารถวิเคราะห์รูปภาพได้ กรุณาลองใหม่");
+        message.error("ไม่สามารถวิเคราะห์รูปภาพได้ กรุณาลองใหม่");
       } finally {
         setIsAnalyzing(false);
       }
@@ -619,13 +438,19 @@ const MainDashboard = () => {
           const foodData = await analyzeFoodImage(file);
           console.log("✅ ผลการวิเคราะห์:", foodData);
 
+          if (isUnrecognizedFood(foodData)) {
+            URL.revokeObjectURL(previewUrl);
+            setShowUnrecognizedModal(true);
+            return;
+          }
+
           setPendingFoodData(foodData);
           setPendingImageFile(file);
           setPendingImagePreview(previewUrl);
           setShowConfirmModal(true);
         } catch (error) {
           console.error("❌ เกิดข้อผิดพลาด:", error);
-          alert("ไม่สามารถวิเคราะห์รูปภาพได้ กรุณาลองใหม่");
+          message.error("ไม่สามารถวิเคราะห์รูปภาพได้ กรุณาลองใหม่");
         } finally {
           setIsAnalyzing(false);
         }
@@ -638,69 +463,74 @@ const MainDashboard = () => {
   const handleConfirmSave = async () => {
     if (!pendingFoodData || !user?.id) return;
 
-    setShowConfirmModal(false);
     setLoading(true);
 
     try {
-      // ส่งพิกัด GPS ไปที่ backend แบบเบื้องหลัง (ถ้าดึงได้)
-      if (navigator.geolocation) {
-        try {
-          const position = await new Promise((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, {
-              enableHighAccuracy: true,
-              timeout: 10000,
-              maximumAge: 0,
-            });
-          });
-
-          const payload = {
-            user_id: user.id.toString(),
-            source_type: "web",
-            latitude: parseFloat(position.coords.latitude),
-            longitude: parseFloat(position.coords.longitude),
-          };
-
-          const apiUrl =
-            import.meta.env.VITE_API_URL || "http://localhost:3333";
-          fetch(`${apiUrl.replace(/\/$/, "")}/api/upload-location`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          }).catch((e) => console.error("Location upload failed", e));
-        } catch (gpsError) {
-          console.warn("ไม่สามารถดึงพิกัด GPS ได้:", gpsError);
-        }
+      // 1. ตรวจสอบและดึงพิกัด GPS จริงจากอุปกรณ์ก่อน
+      const gps = await getCurrentGpsCoordinates({ timeout: 10000 });
+      if (!gps.success || !gps.coords) {
+        setLoading(false);
+        const warnMsg = gps.message || "กรุณาเปิดสิทธิ์การเข้าถึงตำแหน่ง (Location Permission) ใน Browser/อุปกรณ์ และเปิด GPS เพื่อบันทึกข้อมูลอาหาร";
+        toast.error(warnMsg, { duration: 6000, id: "gps-permission-alert" });
+        alert(warnMsg);
+        return;
       }
 
-      // บันทึกข้อมูลพร้อมรูปภาพลง Airtable
+      // 2. ส่งพิกัด GPS เพื่อสร้าง food location
+      const uploadRes = await uploadFoodLocationService({
+        line_uid: user.id.toString(),
+        user_id: user.id.toString(),
+        lat: gps.coords.latitude,
+        lng: gps.coords.longitude,
+        latitude: gps.coords.latitude,
+        longitude: gps.coords.longitude,
+        accuracy_m: gps.coords.accuracy,
+        source_type: "web"
+      });
+
+      if (!uploadRes.success || !uploadRes.locatRefId) {
+        setLoading(false);
+        const errMsg = uploadRes.error || "ไม่พบพิกัด GPS ความแม่นยำสูงจากอุปกรณ์ กรุณาเปิดสิทธิ์การเข้าถึงตำแหน่ง";
+        toast.error(errMsg, { duration: 6000, id: "gps-upload-failed" });
+        alert(errMsg);
+        return;
+      }
+
+      const locatRefId = uploadRes.locatRefId;
+      console.log("Created food location with locat_ref_id:", locatRefId);
+
+      setShowConfirmModal(false);
+
+      // 3. บันทึกข้อมูลเมนูอาหารพร้อมแนบ locat_ref_id
       const result = await addFoodRecord(
         user.id,
         pendingFoodData,
         pendingImageFile,
+        locatRefId
       );
 
       if (result) {
-        // แสดง URL ของรูปที่อัพโหลด
-        const uploadedImageUrl = result.fields?.image?.[0]?.url;
-        if (uploadedImageUrl) {
-          alert(`บันทึกข้อมูลสำเร็จ!\n\nURL รูปภาพ:\n${uploadedImageUrl}`);
-        } else {
-          alert("บันทึกข้อมูลสำเร็จ!");
-        }
+        message.success("บันทึกข้อมูลสำเร็จ!");
 
         // รีโหลดข้อมูล
         const records = await fetchFoodRecords(user.id, displayDate);
         setFoodRecords(records);
+        setStreakRefreshKey((k) => k + 1);
+        window.dispatchEvent(new CustomEvent("food-record-updated"));
       } else {
-        alert("บันทึกข้อมูลไม่สำเร็จ กรุณาลองใหม่");
+        message.error("บันทึกข้อมูลไม่สำเร็จ กรุณาลองใหม่");
       }
     } catch (error) {
       console.error("Error saving:", error);
-      alert("เกิดข้อผิดพลาดในการบันทึก");
+      message.error("เกิดข้อผิดพลาดในการบันทึก");
     } finally {
       setLoading(false);
       setPendingFoodData(null);
       setPendingImageFile(null);
+      if (pendingImagePreview) {
+        URL.revokeObjectURL(pendingImagePreview);
+        setPendingImagePreview(null);
+      }
     }
   };
 
@@ -729,96 +559,91 @@ const MainDashboard = () => {
     };
   }, [showConfirmModal]);
 
+  // ปิดกล้องอัตโนมัติเมื่อออกจากหน้าเพื่อป้องกัน memory leak
+  useEffect(() => {
+    return () => {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, [cameraStream]);
+
   const getProgressColor = () => {
-    if (caloriePercentage < 70) return "from-green-400 to-green-500";
-    if (caloriePercentage < 100) return "from-blue-400 to-blue-500";
-    if (caloriePercentage < 120) return "from-orange-400 to-orange-500";
-    return "from-red-400 to-red-500";
+    if (caloriePercentage < 70) return "bg-emerald-500";
+    if (caloriePercentage < 100) return "bg-emerald-600";
+    if (caloriePercentage < 115) return "bg-amber-500";
+    return "bg-rose-500";
   };
 
   const getProgressBadgeColor = () => {
-    if (caloriePercentage < 70) return "bg-green-500";
-    if (caloriePercentage < 100) return "bg-blue-500";
-    if (caloriePercentage < 120) return "bg-orange-500";
-    return "bg-red-500";
+    if (caloriePercentage < 70) return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    if (caloriePercentage < 100) return "bg-emerald-100 text-emerald-800 border-emerald-300";
+    if (caloriePercentage < 115) return "bg-amber-50 text-amber-700 border-amber-200";
+    return "bg-rose-50 text-rose-700 border-rose-200";
   };
 
   return (
-    <div
-      className="min-h-screen bg-[#f2f2f7] pb-20"
-      style={{
-        fontFamily:
-          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-      }}
-    >
+    <div className="min-h-screen bg-slate-50 pb-24 text-slate-800">
       {/* Navbar */}
-      <div className="bg-gradient-to-r from-green-400 to-emerald-500 px-4 py-6 shadow-sm">
-        <div className="max-w-md mx-auto flex justify-between items-center">
-          <h1 className="text-[28px] font-bold text-white tracking-tight">
-            Calories Daily
-          </h1>
-        </div>
-      </div>
+      <UserHeader title="Calories Daily" subtitle="ภาพรวมโภชนาการประจำวัน" />
 
-      <div className="max-w-md mx-auto px-4 py-6 space-y-4">
+      {/* PDPA Consent Modal */}
+      <PDPAConsentModal userId={user?.id} />
+
+      <div className="max-w-md mx-auto px-4 py-5 space-y-4 h-auto max-h-none">
         {/* Profile Card */}
-        <div className="bg-white rounded-[12px] p-4 shadow-sm animate-slideUpCard">
-          <div className="flex items-center gap-3">
-            <img
-              src={mockUser.profilePic}
-              alt="profile"
-              className="w-14 h-14 rounded-full border-2 border-green-400"
-            />
-            <div>
-              <h3 className="text-[17px] font-semibold text-black">
-                {mockUser.name}
-              </h3>
-              <p className="text-[13px] text-[#8e8e93]">
-                เป้าหมาย: {userTDEE ? userTDEE.toLocaleString() : "-"} kcal/วัน
-              </p>
-            </div>
+        <div className="bg-white rounded-2xl p-4 border border-slate-100/80 shadow-xs flex items-center gap-3.5">
+          <img
+            src={mockUser.profilePic}
+            alt="profile"
+            className="w-12 h-12 rounded-full border border-slate-100 object-cover"
+          />
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">
+              {mockUser.name}
+            </h3>
+            <p className="text-xs text-slate-500">
+              เป้าหมาย: <span className="font-semibold text-slate-700">{userTDEE ? userTDEE.toLocaleString() : "-"}</span> kcal/วัน
+            </p>
           </div>
         </div>
 
         {/* Calorie Progress */}
-        <div className="bg-white rounded-[12px] p-4 shadow-sm animate-slideUpCard animate-delay-100">
+        <div className="bg-white rounded-2xl p-5 border border-slate-100/80 shadow-xs">
           <div className="flex justify-between items-center mb-3">
-            <h5 className="text-[17px] font-semibold text-black">
+            <h5 className="text-sm font-semibold text-slate-900">
               พลังงานวันนี้
             </h5>
             <span
-              className={`${getProgressBadgeColor()} text-white text-[13px] font-semibold px-3 py-1 rounded-full transition-all duration-300`}
+              className={`${getProgressBadgeColor()} border text-xs font-semibold px-2.5 py-0.5 rounded-full transition-all duration-300`}
             >
               {Math.round(animatedPercentage)}%
             </span>
           </div>
 
-          <div className="relative h-8 bg-[#e5e5ea] rounded-full overflow-hidden mb-3">
+          <div className="relative h-4 bg-slate-100 rounded-full overflow-hidden mb-4">
             <div
-              className={`absolute inset-0 bg-gradient-to-r ${getProgressColor()} transition-all duration-300 ease-out`}
+              className={`absolute inset-y-0 left-0 ${getProgressColor()} rounded-full transition-all duration-300 ease-out`}
               style={{ width: `${Math.min(animatedPercentage, 100)}%` }}
             />
-            <div className="absolute inset-0 flex items-center justify-center text-[#8e8e93] text-[13px] font-semibold opacity-50">
-              {animatedCal} / {userTDEE || "-"}
-            </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="grid grid-cols-3 gap-2 text-center divide-x divide-slate-100">
             <div>
-              <div className="text-[20px] font-bold text-red-500 transition-all duration-300">
+              <div className="text-lg font-bold text-slate-900 transition-all duration-300">
                 {animatedCal.toLocaleString()}
               </div>
-              <div className="text-[11px] text-[#8e8e93]">บริโภคแล้ว</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">บริโภคแล้ว</div>
             </div>
             <div>
-              <div className="text-[20px] font-bold text-black">
+              <div className="text-lg font-bold text-slate-700">
                 {userTDEE ? userTDEE.toLocaleString() : "-"}
               </div>
-              <div className="text-[11px] text-[#8e8e93]">เป้าหมาย</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">เป้าหมาย</div>
             </div>
             <div>
               <div
-                className={`text-[20px] font-bold transition-all duration-300 ${remainingCalories >= 0 ? "text-green-500" : "text-red-500"}`}
+                className={`text-lg font-bold transition-all duration-300 ${remainingCalories >= 0 ? "text-emerald-600" : "text-rose-500"}`}
               >
                 {userTDEE
                   ? remainingCalories >= 0
@@ -826,95 +651,95 @@ const MainDashboard = () => {
                     : `+${Math.abs(mockUser.tdee - animatedCal).toLocaleString()}`
                   : "-"}
               </div>
-              <div className="text-[11px] text-[#8e8e93]">
-                {remainingCalories >= 0 ? "เหลือ" : "เกิน"}
+              <div className="text-[11px] text-slate-400 mt-0.5">
+                {remainingCalories >= 0 ? "คงเหลือ" : "เกินเป้า"}
               </div>
             </div>
           </div>
         </div>
 
         {/* Nutrition Summary with Chart */}
-        <div className="bg-white rounded-[12px] p-4 shadow-sm animate-slideUpCard animate-delay-200">
+        <div className="bg-white rounded-2xl p-5 border border-slate-100/80 shadow-xs">
           <div className="text-center mb-4">
-            <p className="text-[13px] text-[#8e8e93]">สรุปโภชนาการวันนี้</p>
+            <p className="text-xs font-semibold text-slate-400">สัดส่วนสารอาหาร</p>
           </div>
 
-          <div className="flex items-center justify-center mb-4 relative">
-            <div className="w-48 h-48">
+          <div className="flex items-center justify-center mb-5 relative">
+            <div className="w-44 h-44">
               <Doughnut data={chartData} options={chartOptions} />
             </div>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <div className="text-[24px] font-bold text-black">{Math.round(totalCal)}</div>
-              <div className="text-[11px] text-[#8e8e93]">/ {userTDEE || '-'} kcal</div>
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <div className="text-2xl font-black text-slate-900 tracking-tight">{Math.round(totalCal)}</div>
+              <div className="text-[11px] text-slate-400">/ {userTDEE || '-'} kcal</div>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-              <div>
-                <div className="text-[15px] font-semibold text-black">
-                  {totalProtein}g
-                </div>
-                <div className="text-[11px] text-[#8e8e93]">
-                  โปรตีน ({proteinCal} kcal)
-                </div>
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100/80 flex items-center gap-2.5">
+              <div className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0"></div>
+              <div className="min-w-0">
+                <div className="text-xs text-slate-500">โปรตีน ({proteinCal} kcal)</div>
+                <div className="text-sm font-bold text-slate-900">{totalProtein}g</div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-orange-500"></div>
-              <div>
-                <div className="text-[15px] font-semibold text-black">
-                  {totalCarb}g
-                </div>
-                <div className="text-[11px] text-[#8e8e93]">
-                  คาร์บ ({carbCal} kcal)
-                </div>
+            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100/80 flex items-center gap-2.5">
+              <div className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0"></div>
+              <div className="min-w-0">
+                <div className="text-xs text-slate-500">คาร์บ ({carbCal} kcal)</div>
+                <div className="text-sm font-bold text-slate-900">{totalCarb}g</div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-red-500"></div>
-              <div>
-                <div className="text-[15px] font-semibold text-black">
-                  {totalFat}g
-                </div>
-                <div className="text-[11px] text-[#8e8e93]">
-                  ไขมัน ({fatCal} kcal)
-                </div>
+            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100/80 flex items-center gap-2.5">
+              <div className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0"></div>
+              <div className="min-w-0">
+                <div className="text-xs text-slate-500">ไขมัน ({fatCal} kcal)</div>
+                <div className="text-sm font-bold text-slate-900">{totalFat}g</div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-[#e5e5ea]"></div>
-              <div>
-                <div className="text-[15px] font-semibold text-black">
-                  {Math.round(remainingTDEE)}
-                </div>
-                <div className="text-[11px] text-[#8e8e93]">เหลือ (kcal)</div>
+            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100/80 flex items-center gap-2.5">
+              <div className="w-2.5 h-2.5 rounded-full bg-slate-300 shrink-0"></div>
+              <div className="min-w-0">
+                <div className="text-xs text-slate-500">คงเหลือ (kcal)</div>
+                <div className="text-sm font-bold text-slate-900">{Math.round(remainingTDEE)}</div>
               </div>
             </div>
           </div>
         </div>
 
+        {/* Calendar Fire Streak */}
+        {user?.id && (
+          <CalendarFireStack
+            lineUid={String(user.id)}
+            selectedDate={displayDate}
+            refreshTrigger={streakRefreshKey}
+            foodRecordsCount={foodRecords.length}
+            onSelectDate={(date) => {
+              setSelectedDate(date);
+              setDisplayDate(date);
+              setIsViewingDate(date !== getTodayLocalDate());
+            }}
+          />
+        )}
+
         {/* Date Filter */}
-        <div className="bg-white rounded-[12px] p-4 shadow-sm animate-slideUpCard animate-delay-300">
-          <label className="block text-[13px] text-black mb-2">
+        <div className="bg-white rounded-2xl p-4 border border-slate-100/80 shadow-xs">
+          <label className="block text-xs font-semibold text-slate-700 mb-2">
             เลือกวันที่
           </label>
-          <div className="flex gap-2">
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="flex-1 px-3 py-2 text-[15px] bg-[#f2f2f7] rounded-lg border-0 focus:bg-[#e5e5ea] focus:outline-none transition-all duration-200"
-            />
-            <button
-              onClick={handleViewDate}
-              disabled={loading}
-              className="px-4 py-2 text-[15px] font-semibold text-white bg-gradient-to-r from-green-400 to-emerald-500 rounded-lg hover:from-green-500 hover:to-emerald-600 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              ดู
-            </button>
-          </div>
+          <DatePicker
+            value={selectedDate ? dayjs(selectedDate) : null}
+            disabled={loading}
+            allowClear={false}
+            format="DD/MM/YYYY"
+            className="w-full !rounded-xl !py-2 !bg-slate-50 !border-slate-200"
+            onChange={(date) => {
+              if (!date) return;
+              const newDate = date.format("YYYY-MM-DD");
+              setSelectedDate(newDate);
+              setDisplayDate(newDate);
+              setIsViewingDate(newDate !== getTodayLocalDate());
+            }}
+          />
         </div>
       </div>
 
@@ -1055,9 +880,10 @@ const MainDashboard = () => {
               </div>
 
               {/* คำแนะนำ */}
-              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-[12px]">
-                <p className="text-[12px] text-blue-800 leading-relaxed">
-                  <span className="font-bold">💡 หมายเหตุ:</span> หากเครื่องใดไม่สามารถ ใช้การอนุณาตการใช้งานกล้องได้ แก้ไขด้วยการถ่ายรูปด้วยแอปกล้องก่อน และนำรูปมาอัพโหลดจาก เลือกรูปจากแกลเลอรี่แทนครับ
+              <div className="mt-4 p-2.5 bg-blue-50 border border-blue-200 rounded-[12px] grid gap-1 text-[12px] text-blue-800 leading-relaxed">
+                <div className="font-bold">หมายเหตุ</div>
+                <p>
+                  หากเครื่องใดไม่สามารถอนุญาตการใช้งานกล้องได้ แก้ไขด้วยการถ่ายรูปด้วยแอปกล้องก่อน แล้วนำรูปมาอัปโหลดจาก "เลือกรูปจากแกลเลอรี่" แทนครับ
                 </p>
               </div>
             </div>
@@ -1097,7 +923,7 @@ const MainDashboard = () => {
               </p>
               <button
                 onClick={() => setShowNoDataModal(false)}
-                className="w-full mt-2 py-3 text-[15px] font-semibold text-white bg-gradient-to-r from-green-400 to-emerald-500 rounded-[12px] hover:from-green-500 hover:to-emerald-600 active:scale-[0.98] transition-all duration-200"
+                className="w-full mt-2 py-2.5 text-xs font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 active:scale-[0.98] transition-all shadow-xs"
               >
                 ตกลง
               </button>
@@ -1117,28 +943,31 @@ const MainDashboard = () => {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header - Fixed */}
-            <div className="px-6 pt-6 pb-4 flex-shrink-0">
-              <h3 className="text-[20px] font-semibold text-black text-center">
-                ตรวจสอบข้อมูล
+            <div className="px-5 pt-4 pb-2 flex-shrink-0 text-center">
+              <h3 className="text-[18px] font-semibold text-slate-900">
+                ตรวจสอบข้อมูลอาหาร
               </h3>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                ตรวจสอบและแก้ไขค่าที่วิเคราะห์ได้ก่อนบันทึก
+              </p>
             </div>
 
             {/* Content - Scrollable */}
-            <div className="px-6 overflow-y-auto flex-1">
+            <div className="px-5 overflow-y-auto flex-1">
               {/* แสดงรูปภาพ */}
               {pendingImagePreview && (
-                <div className="mb-4">
+                <div className="mb-3">
                   <img
                     src={pendingImagePreview}
                     alt="Food preview"
-                    className="w-full h-48 object-cover rounded-[12px]"
+                    className="w-full h-32 object-cover rounded-[12px]"
                   />
                 </div>
               )}
 
-              <div className="space-y-3 mb-6">
-                <div className="flex flex-col gap-2">
-                  <span className="text-[15px] text-[#8e8e93]">เมนู:</span>
+              <div className="space-y-2.5 mb-3">
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-slate-500">ชื่อเมนูอาหาร</span>
                   <textarea
                     value={pendingFoodData.menu}
                     onChange={(e) =>
@@ -1147,14 +976,15 @@ const MainDashboard = () => {
                         menu: e.target.value,
                       })
                     }
-                    className="text-[15px] font-semibold text-black bg-[#f2f2f7] px-3 py-2 rounded-lg border-0 focus:bg-[#e5e5ea] focus:outline-none w-full resize-none"
-                    rows="2"
+                    className="text-sm font-semibold text-slate-900 bg-slate-100/80 px-3 py-1.5 rounded-lg border-0 focus:bg-slate-100 focus:outline-none w-full resize-none"
+                    rows="1"
                   />
                 </div>
 
-                <div className="flex justify-between items-center">
-                  <span className="text-[15px] text-[#8e8e93]">แคลอรี่:</span>
-                  <div className="flex items-center gap-1">
+                {/* แคลอรี่ */}
+                <div className="flex justify-between items-center pt-2 border-t border-slate-100">
+                  <span className="text-sm font-medium text-slate-600">พลังงานทั้งหมด</span>
+                  <div className="flex items-center gap-1.5">
                     <input
                       type="number"
                       value={pendingFoodData.cal}
@@ -1164,15 +994,16 @@ const MainDashboard = () => {
                           cal: Number(e.target.value),
                         })
                       }
-                      className="text-[15px] font-semibold text-black text-right bg-[#f2f2f7] px-3 py-1 rounded-lg border-0 focus:bg-[#e5e5ea] focus:outline-none w-24"
+                      className="text-base font-bold text-slate-900 text-right tabular-nums bg-slate-100/80 px-3 py-1.5 rounded-lg border-0 focus:bg-slate-100 focus:outline-none w-24"
                     />
-                    <span className="text-[13px] text-[#8e8e93]">kcal</span>
+                    <span className="text-xs font-medium text-slate-400">kcal</span>
                   </div>
                 </div>
 
-                <div className="flex justify-between items-center">
-                  <span className="text-[15px] text-[#8e8e93]">โปรตีน:</span>
-                  <div className="flex items-center gap-1">
+                {/* สารอาหาร 3 ช่อง */}
+                <div className="grid grid-cols-3 gap-3 pt-2 border-t border-slate-100">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs text-slate-500 text-center">โปรตีน (g)</span>
                     <input
                       type="number"
                       value={pendingFoodData.protein}
@@ -1182,15 +1013,12 @@ const MainDashboard = () => {
                           protein: Number(e.target.value),
                         })
                       }
-                      className="text-[15px] font-semibold text-black text-right bg-[#f2f2f7] px-3 py-1 rounded-lg border-0 focus:bg-[#e5e5ea] focus:outline-none w-24"
+                      className="text-sm font-bold text-slate-900 text-center tabular-nums bg-slate-100/80 px-2 py-1.5 rounded-lg border-0 focus:bg-slate-100 focus:outline-none w-full"
                     />
-                    <span className="text-[13px] text-[#8e8e93]">g</span>
                   </div>
-                </div>
 
-                <div className="flex justify-between items-center">
-                  <span className="text-[15px] text-[#8e8e93]">คาร์บ:</span>
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs text-slate-500 text-center">คาร์บ (g)</span>
                     <input
                       type="number"
                       value={pendingFoodData.carb}
@@ -1200,15 +1028,12 @@ const MainDashboard = () => {
                           carb: Number(e.target.value),
                         })
                       }
-                      className="text-[15px] font-semibold text-black text-right bg-[#f2f2f7] px-3 py-1 rounded-lg border-0 focus:bg-[#e5e5ea] focus:outline-none w-24"
+                      className="text-sm font-bold text-slate-900 text-center tabular-nums bg-slate-100/80 px-2 py-1.5 rounded-lg border-0 focus:bg-slate-100 focus:outline-none w-full"
                     />
-                    <span className="text-[13px] text-[#8e8e93]">g</span>
                   </div>
-                </div>
 
-                <div className="flex justify-between items-center">
-                  <span className="text-[15px] text-[#8e8e93]">ไขมัน:</span>
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs text-slate-500 text-center">ไขมัน (g)</span>
                     <input
                       type="number"
                       value={pendingFoodData.fat}
@@ -1218,115 +1043,38 @@ const MainDashboard = () => {
                           fat: Number(e.target.value),
                         })
                       }
-                      className="text-[15px] font-semibold text-black text-right bg-[#f2f2f7] px-3 py-1 rounded-lg border-0 focus:bg-[#e5e5ea] focus:outline-none w-24"
+                      className="text-sm font-bold text-slate-900 text-center tabular-nums bg-slate-100/80 px-2 py-1.5 rounded-lg border-0 focus:bg-slate-100 focus:outline-none w-full"
                     />
-                    <span className="text-[13px] text-[#8e8e93]">g</span>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Actions - Fixed */}
-            <div className="px-6 pb-6 flex gap-2 flex-shrink-0 border-t border-[#e5e5ea] pt-4">
+            <div className="px-6 pb-6 flex gap-2.5 flex-shrink-0 border-t border-slate-100 pt-4">
               <button
                 onClick={handleCancelSave}
-                className="flex-1 py-3 text-[15px] font-semibold text-red-500 bg-[#f2f2f7] rounded-[12px] hover:bg-[#e5e5ea] active:scale-[0.98] transition-all duration-200"
+                className="flex-1 py-2.5 text-xs font-semibold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 active:scale-[0.98] transition-all"
               >
                 ยกเลิก
               </button>
               <button
                 onClick={handleConfirmSave}
-                className="flex-1 py-3 text-[15px] font-semibold text-white bg-gradient-to-r from-green-400 to-emerald-500 rounded-[12px] hover:from-green-500 hover:to-emerald-600 active:scale-[0.98] transition-all duration-200"
+                className="flex-1 py-2.5 text-xs font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 active:scale-[0.98] transition-all shadow-xs"
               >
-                บันทึก
+                บันทึกอาหาร
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* PDPA Consent Modal for GPS */}
-      {showPDPA && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-[999] animate-fadeIn p-4 overflow-y-auto">
-          <div className="bg-white rounded-[24px] max-w-sm w-full shadow-2xl border border-slate-100/50 my-auto max-h-[90vh] flex flex-col">
-            {/* Content - Scrollable */}
-            <div className="p-6 flex flex-col gap-5 text-center overflow-y-auto">
-              {/* Pulsing GPS Premium Icon Container */}
-              <div className="mx-auto w-16 h-16 bg-gradient-to-tr from-emerald-400 to-green-500 text-white rounded-full flex items-center justify-center shadow-lg shadow-emerald-400/20 relative animate-pulse flex-shrink-0">
-                <svg
-                  className="w-8 h-8"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                  />
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                  />
-                </svg>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <h3 className="text-[20px] font-bold text-slate-800 tracking-tight">
-                  นโยบายความเป็นส่วนตัว (PDPA)
-                </h3>
-                <p className="text-[13px] text-slate-500 leading-relaxed">
-                  ระบบแอปพลิเคชัน Calories Daily
-                  มีความจำเป็นต้องเข้าถึงข้อมูลพิกัดตำแหน่งที่ตั้ง (GPS) ของท่าน
-                  เพื่อความแม่นยำในการให้บริการและวิเคราะห์ข้อมูลสถานที่สำหรับการใช้งานฟีเจอร์รายงานตัว
-                </p>
-              </div>
-
-              <div className="bg-emerald-50/50 border border-emerald-500/10 rounded-xl p-3.5 flex gap-2.5 text-left">
-                <svg
-                  className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
-                  />
-                </svg>
-                <div className="flex flex-col gap-0.5 text-xs text-emerald-800 leading-relaxed font-semibold">
-                  <span>การคุ้มครองข้อมูลส่วนบุคคล:</span>
-                  <p className="font-normal text-emerald-700">
-                    พิกัด GPS
-                    ของท่านจะถูกนำไปใช้ในเซิร์ฟเวอร์ระบบรายงานตัวเท่านั้น
-                    และจะไม่มีการนำไปเผยแพร่หรือใช้งานในวัตถุประสงค์อื่นนอกเหนือจากที่กำหนด
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Actions - Fixed */}
-            <div className="flex flex-col gap-2.5 p-6 pt-0 flex-shrink-0 border-t border-slate-100">
-              <button
-                onClick={handleAcceptPDPA}
-                className="w-full py-3.5 text-[15px] font-bold text-white bg-gradient-to-r from-emerald-400 to-green-500 rounded-[14px] hover:brightness-105 active:scale-[0.98] transition-all duration-200 shadow-md shadow-emerald-500/15"
-              >
-                ยอมรับ และเปิดสิทธิ์พิกัด (GPS)
-              </button>
-              <button
-                onClick={() => setShowPDPA(false)}
-                className="w-full py-3 text-[14px] font-semibold text-slate-400 hover:text-slate-600 bg-transparent rounded-[12px] transition-colors"
-              >
-                ปฏิเสธ (ปิดหน้าต่างนี้)
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Unrecognized Food Modal Component */}
+      <UnrecognizedFoodModal
+        open={showUnrecognizedModal}
+        onClose={() => setShowUnrecognizedModal(false)}
+        onRetry={() => setShowCameraModal(true)}
+      />
 
       {/* Transparent Loading Overlay */}
       <LoadingOverlay

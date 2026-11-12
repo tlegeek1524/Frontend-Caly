@@ -1,0 +1,82 @@
+[
+  {
+    "event_id": "EVT-2026-001",
+    "timestamp": "2026-03-30T10:45:12Z",
+    "category": "security",
+    "action": "พยายามเข้าสู่ระบบไม่สำเร็จเกินกำหนด",
+    "detail": "รหัสผ่านผิดเกิน 5 ครั้ง บัญชี admin_test ถูกระงับชั่วคราว 15 นาที",
+    "level": "warning",
+    "operator": "system_guard",
+    "ip_address": "192.168.1.105"
+  },
+  {
+    "event_id": "EVT-2026-002",
+    "timestamp": "2026-03-30T10:30:00Z",
+    "category": "auth",
+    "action": "ผู้ดูแลระบบเข้าสู่ระบบสำเร็จ",
+    "detail": "เข้าสู่ระบบผ่าน 2FA สำเร็จ",
+    "level": "success",
+    "operator": "admin",
+    "ip_address": "110.164.201.44"
+  },
+  {
+    "event_id": "EVT-2026-003",
+    "timestamp": "2026-03-30T09:15:20Z",
+    "category": "user",
+    "action": "แก้ไขสิทธิ์ผู้ใช้งาน",
+    "detail": "ปรับบทบาทของบัญชี ACC-003 เป็น Developer",
+    "level": "info",
+    "operator": "admin",
+    "ip_address": "110.164.201.44"
+  },
+  {
+    "event_id": "EVT-2026-004",
+    "timestamp": "2026-03-30T08:50:33Z",
+    "category": "system",
+    "action": "สำรองข้อมูลอัตโนมัติประจำวัน",
+    "detail": "สำรองฐานข้อมูล PostgreSQL ขนาด 1.4GB สำเร็จ",
+    "level": "success",
+    "operator": "cron_scheduler",
+    "ip_address": "127.0.0.1"
+  },
+  {
+    "event_id": "EVT-2026-005",
+    "timestamp": "2026-03-29T23:14:02Z",
+    "category": "security",
+    "action": "ตรวจพบ IP ผิดปกติสแกนพอร์ต",
+    "detail": "บล็อกการเชื่อมต่อจาก IP ที่ต้องสงสัยอัตโนมัติ",
+    "level": "error",
+    "operator": "waf_firewall",
+    "ip_address": "45.143.203.12"
+  },
+  {
+    "event_id": "EVT-2026-006",
+    "timestamp": "2026-03-29T18:22:15Z",
+    "category": "user",
+    "action": "ระงับการใช้งานบัญชี",
+    "detail": "ระงับบัญชีผู้ใช้ ACC-005 เนื่องจากรายงานเนื้อหาไม่เหมาะสม",
+    "level": "warning",
+    "operator": "mod_team",
+    "ip_address": "171.96.12.89"
+  },
+  {
+    "event_id": "EVT-2026-007",
+    "timestamp": "2026-03-29T14:10:45Z",
+    "category": "system",
+    "action": "ล้างแคชระบบ (Cache Flush)",
+    "detail": "รีเซ็ต Redis Cache หลังจากการอัปเดตโมเดลคำนวณแคลอรี่",
+    "level": "info",
+    "operator": "dev_lead",
+    "ip_address": "182.232.88.19"
+  },
+  {
+    "event_id": "EVT-2026-008",
+    "timestamp": "2026-03-29T11:05:00Z",
+    "category": "auth",
+    "action": "เปลี่ยนรหัสผ่านผู้ใช้งาน",
+    "detail": "ผู้ใช้ ACC-002 ทำการเปลี่ยนรหัสผ่านใหม่",
+    "level": "info",
+    "operator": "somchai_s",
+    "ip_address": "125.27.44.102"
+  }
+]

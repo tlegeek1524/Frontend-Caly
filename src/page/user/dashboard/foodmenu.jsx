@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import OpenAI from 'openai';
 import toast from 'react-hot-toast';
+import { message, DatePicker } from 'antd';
+import dayjs from 'dayjs';
+import { compareFoodAfterEating } from '../../../services/foodCompare.service';
 import BottomNav from '../../../components/BottomNav/BottomNav';
 import LoadingOverlay from '../../../components/Loading/LoadingOverlay';
+import UserHeader from '../../../components/UserHeader/UserHeader';
+import { UnrecognizedFoodModal } from '../../../components/UnrecognizedFoodModal/UnrecognizedFoodModal';
 import { 
   createMenuService, 
   getMenusService, 
@@ -11,6 +15,26 @@ import {
   getMenusAfterService, 
   calculateDailyNutrition 
 } from '../../../services/menu.service';
+import { getUserService } from '../../../services/user.service';
+import { getCurrentGpsCoordinates, uploadFoodLocationService } from '../../../services/location.service';
+import { getStoredUser } from '../../../utils/sessionAuth';
+import { compressImage } from '../../../utils/imageCompressor';
+import { analyzeFoodImage, isUnrecognizedFood } from '../../../services/aiFoodAnalysis.service';
+import { uploadFoodImage } from '../../../services/imageStorage.service';
+
+// Fetch User TDEE
+const fetchUserTDEE = async (lineUid) => {
+  try {
+    const userRes = await getUserService(lineUid);
+    if (userRes.success && userRes.data && userRes.data.cal) {
+      return parseInt(userRes.data.cal);
+    }
+    return 2000;
+  } catch (error) {
+    console.error('Error fetching TDEE:', error);
+    return 2000;
+  }
+};
 
 // Menu API Functions
 const fetchFoodRecords = async (lineUid, selectedDate) => {
@@ -26,102 +50,12 @@ const fetchFoodRecords = async (lineUid, selectedDate) => {
   }
 };
 
-// ฟังก์ชันอัพโหลดรูปไป ImgBB
-const uploadImageToImgBB = async (imageFile) => {
-  const apiKey = import.meta.env.VITE_IMGBB_API_KEY;
-  
-  try {
-    const formData = new FormData();
-    formData.append('image', imageFile);
-    
-    const response = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
-      method: 'POST',
-      body: formData
-    });
-    
-    const data = await response.json();
-    
-    if (data.success) {
-      return data.data.url; // URL ของรูปที่อัพโหลด
-    } else {
-      throw new Error('Failed to upload image');
-    }
-  } catch (error) {
-    console.error('ImgBB upload error:', error);
-    throw error;
-  }
-};
-
-// ฟังก์ชัน compress รูปภาพ
-const compressImage = async (file, maxSizeMB = 1, maxWidthOrHeight = 1920) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target.result;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-
-        // คำนวณขนาดใหม่โดยรักษา aspect ratio
-        if (width > height) {
-          if (width > maxWidthOrHeight) {
-            height *= maxWidthOrHeight / width;
-            width = maxWidthOrHeight;
-          }
-        } else {
-          if (height > maxWidthOrHeight) {
-            width *= maxWidthOrHeight / height;
-            height = maxWidthOrHeight;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // ลด quality จนกว่าจะได้ขนาดที่ต้องการ
-        let quality = 0.9;
-        const tryCompress = () => {
-          canvas.toBlob(
-            (blob) => {
-              if (blob.size > maxSizeMB * 1024 * 1024 && quality > 0.1) {
-                quality -= 0.1;
-                tryCompress();
-              } else {
-                // แปลง blob เป็น file
-                const compressedFile = new File([blob], file.name, {
-                  type: 'image/jpeg',
-                  lastModified: Date.now(),
-                });
-                resolve(compressedFile);
-              }
-            },
-            'image/jpeg',
-            quality
-          );
-        };
-
-        tryCompress();
-      };
-      img.onerror = reject;
-    };
-    reader.onerror = reject;
-  });
-};
-
-const addFoodRecord = async (lineUid, foodData, imageFile) => {
+const addFoodRecord = async (lineUid, foodData, imageFile, locatRefId = null) => {
   try {
     let imageUrl = "";
     if (imageFile) {
       const compressedFile = await compressImage(imageFile, 1, 1920);
-      
-      // อัพโหลดรูปภาพ
-      imageUrl = await uploadImageToImgBB(compressedFile);
+      imageUrl = await uploadFoodImage(compressedFile);
       console.log('Uploaded Image URL/Path:', imageUrl);
     }
     
@@ -136,7 +70,8 @@ const addFoodRecord = async (lineUid, foodData, imageFile) => {
       image_url: imageUrl || "",
       runnum: "1",
       mash: foodData.mash || "lunch",
-      eat_percent: 100
+      eat_percent: 100,
+      ...(locatRefId ? { locat_ref_id: locatRefId } : {})
     };
 
     const { success, data, error } = await createMenuService(payload);
@@ -165,7 +100,7 @@ const addFoodAfterRecord = async (lineUid, foodData, imageFile, originalRunnum, 
     let imageUrl = '';
     if (imageFile) {
       const compressedFile = await compressImage(imageFile, 1, 1920);
-      imageUrl = await uploadImageToImgBB(compressedFile);
+      imageUrl = await uploadFoodImage(compressedFile);
       console.log('Uploaded After Image URL/Path:', imageUrl);
     }
     
@@ -203,65 +138,6 @@ const addFoodAfterRecord = async (lineUid, foodData, imageFile, originalRunnum, 
   }
 };
 
-// OpenAI GPT Function
-const analyzeFoodImage = async (imageFile) => {
-  try {
-    const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
-    const openai = new OpenAI({
-      apiKey: API_KEY,
-      dangerouslyAllowBrowser: true // สำหรับใช้ใน browser
-    });
-    
-    const base64Image = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(imageFile);
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = error => reject(error);
-    });
-    
-    const prompt = `วิเคราะห์รูปอาหารนี้และส่งข้อมูลกลับมาในรูปแบบ JSON เท่านั้น:
-{
-  "menu": "ชื่ออาหาร (ภาษาไทย)",
-  "cal": จำนวนแคลอรี่ (ตัวเลข),
-  "protein": จำนวนโปรตีน (กรัม, ตัวเลข),
-  "carb": จำนวนคาร์โบไฮเดรต (กรัม, ตัวเลข),
-  "fat": จำนวนไขมัน (กรัม, ตัวเลข)
-}
-ส่งเฉพาะ JSON เท่านั้น`;
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            {
-              type: "image_url",
-              image_url: {
-                url: base64Image
-              }
-            }
-          ]
-        }
-      ],
-      max_tokens: 500
-    });
-    
-    const text = response.choices[0].message.content;
-    
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    } else {
-      throw new Error('ไม่สามารถแปลง response เป็น JSON ได้');
-    }
-  } catch (error) {
-    console.error('Error:', error);
-    throw error;
-  }
-};
-
 const FoodMenu = () => {
   const navigate = useNavigate();
 
@@ -282,10 +158,12 @@ const FoodMenu = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [foodRecords, setFoodRecords] = useState([]);
   const [foodAfterRecords, setFoodAfterRecords] = useState([]);
+  const [userTDEE, setUserTDEE] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isViewingDate, setIsViewingDate] = useState(false);
   const [showNoDataModal, setShowNoDataModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showUnrecognizedModal, setShowUnrecognizedModal] = useState(false);
   const [pendingFoodData, setPendingFoodData] = useState(null);
   const [pendingImageFile, setPendingImageFile] = useState(null);
   const [pendingImagePreview, setPendingImagePreview] = useState(null);
@@ -300,11 +178,7 @@ const FoodMenu = () => {
 
   // ดึงข้อมูล user
   const user = React.useMemo(() => {
-    const userStr = localStorage.getItem('user');
-    if (userStr) {
-      return JSON.parse(userStr);
-    }
-    return null;
+    return getStoredUser();
   }, []);
 
   // ถ้าไม่มี user ให้กลับไปหน้า login
@@ -321,13 +195,17 @@ const FoodMenu = () => {
     const loadData = async () => {
       setLoading(true);
       try {
-        const [records, afterRes] = await Promise.all([
+        const [records, afterRes, tdee] = await Promise.all([
           fetchFoodRecords(user.id, displayDate),
-          getMenusAfterService(user.id, displayDate)
+          getMenusAfterService(user.id, displayDate),
+          fetchUserTDEE(user.id)
         ]);
         setFoodRecords(records);
         if (afterRes.success && afterRes.data) {
           setFoodAfterRecords(afterRes.data);
+        }
+        if (tdee) {
+          setUserTDEE(tdee);
         }
       } catch (error) {
         console.error('❌ Error loading data:', error);
@@ -395,65 +273,6 @@ const FoodMenu = () => {
       };
     }
   }, [touchStart, touchEnd]);
-  
-  const handleDelete = async (id) => {
-    if (window.confirm('คุณต้องการลบรายการนี้หรือไม่?')) {
-      const success = await deleteFoodRecord(id);
-      if (success) {
-        alert('ลบข้อมูลเรียบร้อย');
-        // รีโหลดข้อมูล
-        const [records, afterRecords] = await Promise.all([
-          fetchFoodRecords(user.id, displayDate),
-          fetchFoodAfterRecords(user.id)
-        ]);
-        setFoodRecords(records);
-        setFoodAfterRecords(afterRecords);
-      } else {
-        alert('เกิดข้อผิดพลาดในการลบข้อมูล');
-      }
-    }
-  };
-
-  const handleDeleteAfter = async (afterId) => {
-    if (window.confirm('คุณต้องการลบรูปหลังกินหรือไม่?')) {
-      const success = await deleteFoodAfterRecord(afterId);
-      if (success) {
-        alert('ลบรูปหลังกินเรียบร้อย');
-        // รีโหลดข้อมูล
-        const afterRecords = await fetchFoodAfterRecords(user.id);
-        setFoodAfterRecords(afterRecords);
-      } else {
-        alert('เกิดข้อผิดพลาดในการลบข้อมูล');
-      }
-    }
-  };
-
-  const handleDeleteBoth = async (beforeId, afterId) => {
-    if (window.confirm('⚠️ คุณต้องการลบรูปทั้งก่อนกินและหลังกินหรือไม่?\n\nการกระทำนี้ไม่สามารถย้อนกลับได้')) {
-      const [successBefore, successAfter] = await Promise.all([
-        deleteFoodRecord(beforeId),
-        deleteFoodAfterRecord(afterId)
-      ]);
-      
-      if (successBefore && successAfter) {
-        alert('ลบข้อมูลทั้งหมดเรียบร้อย');
-      } else if (successBefore) {
-        alert('ลบรูปก่อนกินสำเร็จ แต่ลบรูปหลังกินไม่สำเร็จ');
-      } else if (successAfter) {
-        alert('ลบรูปหลังกินสำเร็จ แต่ลบรูปก่อนกินไม่สำเร็จ');
-      } else {
-        alert('เกิดข้อผิดพลาดในการลบข้อมูล');
-      }
-      
-      // รีโหลดข้อมูล
-      const [records, afterRecords] = await Promise.all([
-        fetchFoodRecords(user.id, displayDate),
-        fetchFoodAfterRecords(user.id)
-      ]);
-      setFoodRecords(records);
-      setFoodAfterRecords(afterRecords);
-    }
-  };
 
   const handleCompareFood = (item) => {
     // เก็บข้อมูลอาหารที่เลือก
@@ -502,129 +321,20 @@ const FoodMenu = () => {
     setIsComparing(true);
     
     try {
-      console.log('🔄 กำลังเปรียบเทียบรูปภาพ...');
+      const result = await compareFoodAfterEating(selectedFoodForCompare, afterImageFile);
+
+      // เก็บข้อมูลไว้ชั่วคราว
+      setAiSuggestedPercent(result.percentEaten);
+      setManualPercent(result.percentEaten);
+      setPendingAfterImage(afterImageFile);
       
-      // แปลงรูปหลังกินเป็น base64
-      const afterImageBase64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(afterImageFile);
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = error => reject(error);
-      });
+      // ปิด loading modal ก่อน
+      setIsComparing(false);
       
-      // ตรวจสอบ URL รูปก่อนกิน และแปลงเป็น Base64 ถ้าเป็น URL ภายนอกหรือดึงตรง
-      let beforeImageForAi = selectedFoodForCompare.image || selectedFoodForCompare.image_url;
-      if (!beforeImageForAi) {
-        throw new Error('ไม่พบรูปภาพอาหารก่อนกิน');
-      }
-
-      // ถ้าเป็น URL ให้แปลงเป็น Base64 หรือส่งตรง
-      try {
-        if (beforeImageForAi.startsWith('http')) {
-          const imgRes = await fetch(beforeImageForAi);
-          if (imgRes.ok) {
-            const blob = await imgRes.blob();
-            beforeImageForAi = await new Promise((resolve) => {
-              const reader = new FileReader();
-              reader.readAsDataURL(blob);
-              reader.onload = () => resolve(reader.result);
-              reader.onerror = () => resolve(selectedFoodForCompare.image);
-            });
-          }
-        }
-      } catch (err) {
-        console.warn('Cannot convert before image to base64, using direct URL:', err);
-      }
-      
-      const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
-      if (!API_KEY) {
-        throw new Error('ไม่พบ VITE_OPENAI_API_KEY ในระบบ');
-      }
-
-      const openai = new OpenAI({
-        apiKey: API_KEY,
-        dangerouslyAllowBrowser: true
-      });
-      
-      const prompt = `เปรียบเทียบรูปอาหาร 2 รูป:
-
-รูปที่ 1 (ก่อนกิน): อาหารจานเต็ม
-รูปที่ 2 (หลังกิน): อาหารที่เหลือในจาน
-
-ข้อมูลอาหารเดิม:
-- เมนู: ${selectedFoodForCompare.menu}
-- แคลอรี่: ${selectedFoodForCompare.cal} kcal
-- โปรตีน: ${selectedFoodForCompare.protein} g
-- คาร์โบไฮเดรต: ${selectedFoodForCompare.carb} g
-- ไขมัน: ${selectedFoodForCompare.fat} g
-
-วิเคราะห์และส่งข้อมูลกลับมาในรูปแบบ JSON เท่านั้น:
-{
-  "percentEaten": เปอร์เซ็นต์ที่กินไป (0-100, ตัวเลข),
-  "caloriesConsumed": แคลอรี่ที่กินไปจริง (ตัวเลข),
-  "proteinConsumed": โปรตีนที่กินไป (กรัม, ตัวเลข),
-  "carbConsumed": คาร์โบไฮเดรตที่กินไป (กรัม, ตัวเลข),
-  "fatConsumed": ไขมันที่กินไป (กรัม, ตัวเลข),
-  "analysis": "คำอธิบายสั้นๆ ภาษาไทย"
-}
-
-ส่งเฉพาะ JSON เท่านั้น`;
-
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content: "You are an expert dietary visual estimation assistant. Your task is to compare before and after images of a meal and estimate the visual percentage of food consumed (0 to 100). You MUST ALWAYS provide your best estimate in the exact JSON format requested, without refusal or conversational disclaimer."
-          },
-          {
-            role: "user",
-            content: [
-              { type: "text", text: prompt },
-              {
-                type: "image_url",
-                image_url: {
-                  url: beforeImageForAi,
-                  detail: "high"
-                }
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: afterImageBase64,
-                  detail: "high"
-                }
-              }
-            ]
-          }
-        ],
-        max_tokens: 500
-      });
-      
-      const text = response.choices[0].message.content;
-      console.log('📊 Response:', text);
-      
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const result = JSON.parse(jsonMatch[0]);
-        
-        // เก็บข้อมูลไว้ชั่วคราว
-        setAiSuggestedPercent(Math.round(result.percentEaten));
-        setManualPercent(Math.round(result.percentEaten));
-        setPendingAfterImage(afterImageFile);
-        
-        // ปิด loading modal ก่อน
-        setIsComparing(false);
-        
-        // แสดง modal ให้ผู้ใช้ปรับ % เอง
-        setShowManualPercentModal(true);
-        toast.success(`วิเคราะห์สำเร็จ! ประเมินว่าทานไป ~${Math.round(result.percentEaten)}%`);
-      } else {
-        throw new Error('ไม่สามารถแปลง response เป็น JSON ได้');
-      }
+      // แสดง modal ให้ผู้ใช้ปรับ % เอง
+      setShowManualPercentModal(true);
+      toast.success(`วิเคราะห์สำเร็จ! ประเมินว่าทานไป ~${result.percentEaten}%`);
     } catch (error) {
-      console.error('❌ เกิดข้อผิดพลาด:', error);
       toast.error(error.message || 'ไม่สามารถเปรียบเทียบรูปภาพได้ กรุณาลองใหม่');
       setIsComparing(false);
       setSelectedFoodForCompare(null);
@@ -656,6 +366,12 @@ const FoodMenu = () => {
           const foodData = await analyzeFoodImage(file);
           console.log('✅ ผลการวิเคราะห์:', foodData);
           
+          if (isUnrecognizedFood(foodData)) {
+            URL.revokeObjectURL(previewUrl);
+            setShowUnrecognizedModal(true);
+            return;
+          }
+
           // แสดง modal ให้ user ตรวจสอบข้อมูล
           setPendingFoodData(foodData);
           setPendingImageFile(file);
@@ -663,7 +379,7 @@ const FoodMenu = () => {
           setShowConfirmModal(true);
         } catch (error) {
           console.error('❌ เกิดข้อผิดพลาด:', error);
-          alert('ไม่สามารถวิเคราะห์รูปภาพได้ กรุณาลองใหม่');
+          message.error('ไม่สามารถวิเคราะห์รูปภาพได้ กรุณาลองใหม่');
         } finally {
           setIsAnalyzing(false);
         }
@@ -692,6 +408,12 @@ const FoodMenu = () => {
           const foodData = await analyzeFoodImage(file);
           console.log('✅ ผลการวิเคราะห์:', foodData);
           
+          if (isUnrecognizedFood(foodData)) {
+            URL.revokeObjectURL(previewUrl);
+            setShowUnrecognizedModal(true);
+            return;
+          }
+
           // แสดง modal ให้ user ตรวจสอบข้อมูล
           setPendingFoodData(foodData);
           setPendingImageFile(file);
@@ -699,7 +421,7 @@ const FoodMenu = () => {
           setShowConfirmModal(true);
         } catch (error) {
           console.error('❌ เกิดข้อผิดพลาด:', error);
-          alert('ไม่สามารถวิเคราะห์รูปภาพได้ กรุณาลองใหม่');
+          message.error('ไม่สามารถวิเคราะห์รูปภาพได้ กรุณาลองใหม่');
         } finally {
           setIsAnalyzing(false);
         }
@@ -712,52 +434,59 @@ const FoodMenu = () => {
   const handleConfirmSave = async () => {
     if (!pendingFoodData || !user?.id) return;
     
-    setShowConfirmModal(false);
     setLoading(true);
     
     try {
-      // ส่งพิกัด GPS ไปที่ backend แบบเบื้องหลัง (ถ้าดึงได้)
-      if (navigator.geolocation) {
-        try {
-          const position = await new Promise((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, {
-              enableHighAccuracy: true,
-              timeout: 10000,
-              maximumAge: 0
-            });
-          });
-          
-          const payload = {
-            user_id: user.id.toString(),
-            source_type: 'web',
-            latitude: parseFloat(position.coords.latitude),
-            longitude: parseFloat(position.coords.longitude)
-          };
-          
-          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3333';
-          fetch(`${apiUrl.replace(/\/$/, '')}/api/upload-location`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          }).catch(e => console.error("Location upload failed", e));
-        } catch (gpsError) {
-          console.warn("ไม่สามารถดึงพิกัด GPS ได้:", gpsError);
-        }
+      // 1. ตรวจสอบและดึงพิกัด GPS จริงจากอุปกรณ์ก่อน
+      const gps = await getCurrentGpsCoordinates({ timeout: 10000 });
+      if (!gps.success || !gps.coords) {
+        setLoading(false);
+        const warnMsg = gps.message || 'กรุณาเปิดสิทธิ์การเข้าถึงตำแหน่ง (Location Permission) ใน Browser/อุปกรณ์ และเปิด GPS เพื่อบันทึกข้อมูลอาหาร';
+        toast.error(warnMsg, { duration: 6000, id: 'gps-permission-alert' });
+        alert(warnMsg);
+        return;
       }
 
-      // บันทึกข้อมูลพร้อมรูปภาพลง Airtable
-      const result = await addFoodRecord(user.id, pendingFoodData, pendingImageFile);
+      // 2. ส่งพิกัด GPS เพื่อสร้าง food location
+      const uploadRes = await uploadFoodLocationService({
+        line_uid: user.id.toString(),
+        user_id: user.id.toString(),
+        lat: gps.coords.latitude,
+        lng: gps.coords.longitude,
+        latitude: gps.coords.latitude,
+        longitude: gps.coords.longitude,
+        accuracy_m: gps.coords.accuracy,
+        source_type: 'web'
+      });
+
+      if (!uploadRes.success || !uploadRes.locatRefId) {
+        setLoading(false);
+        const errMsg = uploadRes.error || 'ไม่พบพิกัด GPS ความแม่นยำสูงจากอุปกรณ์ กรุณาเปิดสิทธิ์การเข้าถึงตำแหน่ง';
+        toast.error(errMsg, { duration: 6000, id: 'gps-upload-failed' });
+        alert(errMsg);
+        return;
+      }
+
+      const locatRefId = uploadRes.locatRefId;
+      console.log('Created food location with locat_ref_id:', locatRefId);
+
+      setShowConfirmModal(false);
+
+      // 3. บันทึกข้อมูลเมนูอาหารพร้อมแนบ locat_ref_id
+      const result = await addFoodRecord(user.id, pendingFoodData, pendingImageFile, locatRefId);
       
       if (result) {
+        message.success('บันทึกข้อมูลสำเร็จ!');
         // รีโหลดข้อมูล
         const records = await fetchFoodRecords(user.id, displayDate);
         setFoodRecords(records);
+        window.dispatchEvent(new CustomEvent("food-record-updated"));
       } else {
-        alert('บันทึกข้อมูลไม่สำเร็จ กรุณาลองใหม่');
+        message.error('บันทึกข้อมูลไม่สำเร็จ กรุณาลองใหม่');
       }
     } catch (error) {
       console.error('Error saving:', error);
-      alert('เกิดข้อผิดพลาดในการบันทึก');
+      message.error('เกิดข้อผิดพลาดในการบันทึก');
     } finally {
       setLoading(false);
       setPendingFoodData(null);
@@ -810,7 +539,7 @@ const FoodMenu = () => {
         // รีโหลดข้อมูลทั้งหมดทั้งก่อนกินและหลังกิน เพื่อให้ UI อัปเดตทันที
         const [records, afterRes] = await Promise.all([
           fetchFoodRecords(user.id, displayDate),
-          getMenusAfterService(user.id)
+          getMenusAfterService(user.id, displayDate)
         ]);
         setFoodRecords(records);
         if (afterRes.success && afterRes.data) {
@@ -846,60 +575,85 @@ const FoodMenu = () => {
     foodAfterRecords
   );
 
+  const isCalExceeded = userTDEE && totalCal > userTDEE;
+
   return (
     <div 
       ref={containerRef}
-      className="min-h-screen bg-[#f2f2f7] pb-20" 
-      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}
+      className="min-h-screen bg-slate-50 pb-24 text-slate-800"
     >
       {/* Navbar */}
-      <div className="bg-gradient-to-r from-green-400 to-emerald-500 px-3 sm:px-4 py-4 sm:py-6 shadow-sm">
-        <div className="max-w-md mx-auto">
-          <h1 className="text-[24px] sm:text-[28px] font-bold text-white tracking-tight">
-            Calories Daily
-          </h1>
-        </div>
-      </div>
+      <UserHeader title="Calories Daily" subtitle="บันทึกและประวัติมื้ออาหาร" />
 
-      <div className="max-w-md mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-3 sm:space-y-4">
+      <div className="max-w-md mx-auto px-4 py-5 space-y-4 h-auto max-h-none">
         {/* Date Filter */}
-        <div className="bg-white rounded-[10px] sm:rounded-[12px] p-3 sm:p-4 shadow-sm animate-slideUpCard">
-          <label htmlFor="dateSelectFood" className="block text-[12px] sm:text-[13px] text-black mb-1.5 sm:mb-2">เลือกวันที่</label>
-          <div className="flex gap-2">
-            <input 
-              id="dateSelectFood"
-              type="date" 
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="flex-1 px-2.5 sm:px-3 py-2 text-[14px] sm:text-[15px] bg-[#f2f2f7] rounded-lg border-0 focus:bg-[#e5e5ea] focus:outline-none transition-all duration-200 cursor-pointer"
-              style={{
-                WebkitAppearance: 'none',
-                MozAppearance: 'none',
-                appearance: 'none'
-              }}
-            />
-            <button 
-              onClick={handleViewDate}
-              disabled={loading}
-              className="px-3 sm:px-4 py-2 text-[14px] sm:text-[15px] font-semibold text-white bg-gradient-to-r from-green-400 to-emerald-500 rounded-lg hover:from-green-500 hover:to-emerald-600 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              ดู
-            </button>
-          </div>
+        <div className="bg-white rounded-2xl p-4 border border-slate-100/80 shadow-xs">
+          <label className="block text-xs font-semibold text-slate-700 mb-2">เลือกวันที่</label>
+          <DatePicker
+            value={selectedDate ? dayjs(selectedDate) : null}
+            disabled={loading}
+            allowClear={false}
+            format="DD/MM/YYYY"
+            className="w-full !rounded-xl !py-2 !bg-slate-50 !border-slate-200"
+            onChange={(date) => {
+              if (!date) return;
+              const newDate = date.format("YYYY-MM-DD");
+              setSelectedDate(newDate);
+              setDisplayDate(newDate);
+              setIsViewingDate(newDate !== getTodayLocalDate());
+            }}
+          />
         </div>
 
         {/* Food List */}
-        <div className="animate-slideUpCard animate-delay-100">
-          <h5 className="text-[15px] sm:text-[17px] font-semibold text-black mb-2.5 sm:mb-3 px-1">
+        <div>
+          <h5 className="text-sm font-bold text-slate-900 mb-3 px-1">
             รายการอาหารวันที่ {new Date(displayDate).toLocaleDateString('th-TH', { 
               year: 'numeric', 
               month: 'long', 
               day: 'numeric' 
             })}
           </h5>
-          <div className="space-y-2.5 sm:space-y-3">
+
+          {/* Summary - ย้ายขึ้นมาอยู่ใต้หัวข้อรายการอาหาร */}
+          <div className="bg-white rounded-2xl p-4 border border-slate-100/80 shadow-xs mb-4">
+            <h5 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">สรุปรวมสารอาหาร</h5>
+            <div className="grid grid-cols-4 gap-2 divide-x divide-slate-100">
+              <div className="text-center">
+                <div className={`text-base font-bold transition-colors ${
+                  isCalExceeded ? 'text-rose-600' : 'text-slate-900'
+                }`}>
+                  {totalCal}
+                </div>
+                <div className={`text-[11px] mt-0.5 ${
+                  isCalExceeded ? 'text-rose-500 font-medium' : 'text-slate-400'
+                }`}>
+                  {isCalExceeded ? 'kcal เกินเป้า' : 'kcal รวม'}
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-base font-bold text-slate-900">
+                  {totalProtein}g
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5">โปรตีน</div>
+              </div>
+              <div className="text-center">
+                <div className="text-base font-bold text-slate-900">
+                  {totalCarb}g
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5">คาร์บ</div>
+              </div>
+              <div className="text-center">
+                <div className="text-base font-bold text-slate-900">
+                  {totalFat}g
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5">ไขมัน</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
             {foodRecords.map((item, index) => {
-              // หาข้อมูลหลังกินที่ตรงกับ food_menu_id ของรายการอาหารนี้เท่านั้น (item.id === after.food_menu_id)
               const afterData = foodAfterRecords.find(after => 
                 Number(after.food_menu_id) === Number(item.id)
               );
@@ -907,48 +661,48 @@ const FoodMenu = () => {
               return (
                 <div 
                   key={item.id} 
-                  className="bg-white rounded-[10px] sm:rounded-[12px] overflow-hidden shadow-sm animate-slideUpCard" 
-                  style={{ animationDelay: `${0.2 + index * 0.1}s` }}
+                  className="bg-white rounded-2xl overflow-hidden border border-slate-100/80 shadow-xs" 
                 >
-                  <div className="bg-[#f2f2f7] px-3 sm:px-4 py-2 flex justify-between items-center border-b border-[#e5e5ea]">
-                    <span className="text-[14px] sm:text-[15px] font-semibold text-black truncate flex-1 mr-2">{item.menu}</span>
-                    <span className="text-[12px] sm:text-[13px] text-[#8e8e93] shrink-0">
-                      {item.date ? new Date(item.date).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                  <div className="px-4 py-3 flex justify-between items-center border-b border-slate-100 gap-2">
+                    <span className="text-sm font-bold text-slate-900 truncate flex-1">{item.menu}</span>
+                    <span className="text-xs text-slate-400 shrink-0 font-medium">
+                      {item.date ? `${new Date(item.date).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.` : '-'}
                     </span>
                   </div>
-                <div className="p-3 sm:p-4">
+                <div className="p-4">
                   {/* ข้อมูลก่อนกิน */}
-                  <div className="mb-3 sm:mb-4">
-                    <div className="text-[12px] sm:text-[13px] font-semibold text-green-600 mb-1.5 sm:mb-2">🍽️ ก่อนกิน</div>
-                    <div className="flex gap-2.5 sm:gap-3 items-start">
+                  <div className={afterData ? "mb-4" : ""}>
+                    <div className="text-xs font-semibold text-emerald-700 mb-2">
+                      ก่อนกิน
+                    </div>
+                    <div className="flex gap-3.5 items-center">
                       {item.image ? (
                         <img 
                           src={item.image} 
                           alt={item.menu}
-                          className="w-16 h-16 sm:w-18 sm:h-18 rounded-lg object-cover bg-[#f2f2f7] shrink-0"
+                          className="w-24 h-24 rounded-xl object-cover border border-slate-100 shrink-0"
                         />
                       ) : (
-                        <div className="w-16 h-16 rounded-lg bg-[#f2f2f7] flex items-center justify-center text-gray-400 text-xs">
+                        <div className="w-24 h-24 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 text-xs shrink-0">
                           ไม่มีรูป
                         </div>
                       )}
-                      <div className="flex-1 min-w-0">
-                        <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
-                          <div className="flex items-center gap-1">
-                            <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-green-500 shrink-0"></div>
-                            <span className="text-[12px] sm:text-[13px] text-gray-800 font-semibold truncate">{item.cal} kcal</span>
+                      <div className="flex-1 min-w-0 h-24 flex flex-col justify-between py-0.5">
+                        <div className="text-xl font-bold text-slate-900 tabular-nums text-right leading-none">
+                          {item.cal} <span className="text-xs font-semibold text-slate-500">kcal</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-xs text-center">
+                          <div>
+                            <div className="font-bold text-slate-800 tabular-nums">{item.protein}g</div>
+                            <div className="text-[11px] text-slate-400">โปรตีน</div>
                           </div>
-                          <div className="flex items-center gap-1">
-                            <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-blue-500 shrink-0"></div>
-                            <span className="text-[12px] sm:text-[13px] text-[#8e8e93] truncate">{item.protein}g โปรตีน</span>
+                          <div>
+                            <div className="font-bold text-slate-800 tabular-nums">{item.carb}g</div>
+                            <div className="text-[11px] text-slate-400">คาร์บ</div>
                           </div>
-                          <div className="flex items-center gap-1">
-                            <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-orange-500 shrink-0"></div>
-                            <span className="text-[12px] sm:text-[13px] text-[#8e8e93] truncate">{item.carb}g คาร์บ</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-red-500 shrink-0"></div>
-                            <span className="text-[12px] sm:text-[13px] text-[#8e8e93] truncate">{item.fat}g ไขมัน</span>
+                          <div>
+                            <div className="font-bold text-slate-800 tabular-nums">{item.fat}g</div>
+                            <div className="text-[11px] text-slate-400">ไขมัน</div>
                           </div>
                         </div>
                       </div>
@@ -957,39 +711,38 @@ const FoodMenu = () => {
 
                   {/* ข้อมูลหลังกิน (ถ้ามี) */}
                   {afterData && (
-                    <div className="mb-2.5 sm:mb-3 pt-2.5 sm:pt-3 border-t border-[#e5e5ea]">
-                      <div className="text-[12px] sm:text-[13px] font-semibold text-blue-600 mb-1.5 sm:mb-2">
-                        🥣 หลังกิน (ทานไป {afterData.eat_percent ?? afterData.eatPercent}%)
+                    <div className="mb-3 pt-3.5 border-t border-slate-100">
+                      <div className="text-xs font-semibold text-blue-700 mb-2">
+                        หลังกิน · ทานไป {afterData.eat_percent ?? afterData.eatPercent}%
                       </div>
-                      <div className="flex gap-2.5 sm:gap-3 items-start">
+                      <div className="flex gap-3.5 items-center">
                         {afterData.image ? (
                           <img 
                             src={afterData.image} 
                             alt={`${item.menu} - หลังกิน`}
-                            className="w-16 h-16 sm:w-18 sm:h-18 rounded-lg object-cover bg-[#f2f2f7] shrink-0"
+                            className="w-24 h-24 rounded-xl object-cover border border-slate-100 shrink-0"
                           />
                         ) : (
-                          <div className="w-16 h-16 rounded-lg bg-[#f2f2f7] flex items-center justify-center text-gray-400 text-xs">
+                          <div className="w-24 h-24 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 text-xs shrink-0">
                             ไม่มีรูป
                           </div>
                         )}
-                        <div className="flex-1 min-w-0">
-                          <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
-                            <div className="flex items-center gap-1">
-                              <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-green-500 shrink-0"></div>
-                              <span className="text-[12px] sm:text-[13px] text-blue-600 font-semibold truncate">{afterData.cal} kcal</span>
+                        <div className="flex-1 min-w-0 h-24 flex flex-col justify-between py-0.5">
+                          <div className="text-xl font-bold text-blue-900 tabular-nums text-right leading-none">
+                            {afterData.cal} <span className="text-xs font-semibold text-blue-600/80">kcal</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-xs text-center">
+                            <div>
+                              <div className="font-bold text-slate-800 tabular-nums">{afterData.protein}g</div>
+                              <div className="text-[11px] text-slate-400">โปรตีน</div>
                             </div>
-                            <div className="flex items-center gap-1">
-                              <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-blue-500 shrink-0"></div>
-                              <span className="text-[12px] sm:text-[13px] text-blue-600 font-semibold truncate">{afterData.protein}g โปรตีน</span>
+                            <div>
+                              <div className="font-bold text-slate-800 tabular-nums">{afterData.carb}g</div>
+                              <div className="text-[11px] text-slate-400">คาร์บ</div>
                             </div>
-                            <div className="flex items-center gap-1">
-                              <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-orange-500 shrink-0"></div>
-                              <span className="text-[12px] sm:text-[13px] text-blue-600 font-semibold truncate">{afterData.carb}g คาร์บ</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-red-500 shrink-0"></div>
-                              <span className="text-[12px] sm:text-[13px] text-blue-600 font-semibold truncate">{afterData.fat}g ไขมัน</span>
+                            <div>
+                              <div className="font-bold text-slate-800 tabular-nums">{afterData.fat}g</div>
+                              <div className="text-[11px] text-slate-400">ไขมัน</div>
                             </div>
                           </div>
                         </div>
@@ -997,14 +750,14 @@ const FoodMenu = () => {
                     </div>
                   )}
 
-                  {/* ปุ่มเปรียบเทียบอาหารหลังกิน - แสดงเมื่อยังไม่มีข้อมูลหลังกิน */}
+                  {/* ปุ่มเปรียบเทียบอาหารหลังกิน */}
                   {!afterData && (
-                    <div className="pt-2 border-t border-[#e5e5ea] flex justify-between items-center">
+                    <div className="pt-2.5 border-t border-slate-100 flex justify-end items-center">
                       <button
                         onClick={() => handleCompareFood(item)}
-                        className="text-[13px] text-emerald-600 font-medium hover:text-emerald-700 transition-colors flex items-center gap-1"
+                        className="text-xs text-emerald-600 font-semibold hover:text-emerald-700 transition-colors flex items-center gap-1.5 cursor-pointer"
                       >
-                        <span>📸</span> เปรียบเทียบอาหารหลังกิน
+                        <span>📸 เปรียบเทียบอาหารหลังกิน</span>
                       </button>
                     </div>
                   )}
@@ -1015,36 +768,6 @@ const FoodMenu = () => {
           </div>
         </div>
 
-        {/* Summary */}
-        <div className="bg-white rounded-[10px] sm:rounded-[12px] p-3 sm:p-4 shadow-sm animate-slideUpCard animate-delay-300">
-          <h5 className="text-[14px] sm:text-[15px] font-semibold text-black mb-2.5 sm:mb-3">สรุปรวม</h5>
-          <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
-            <div className="text-center">
-              <div className="text-[16px] sm:text-[18px] font-bold text-green-500">
-                {totalCal}
-              </div>
-              <div className="text-[10px] sm:text-[11px] text-[#8e8e93]">แคลอรี่</div>
-            </div>
-            <div className="text-center">
-              <div className="text-[16px] sm:text-[18px] font-bold text-blue-500">
-                {totalProtein}g
-              </div>
-              <div className="text-[10px] sm:text-[11px] text-[#8e8e93]">โปรตีน</div>
-            </div>
-            <div className="text-center">
-              <div className="text-[16px] sm:text-[18px] font-bold text-orange-500">
-                {totalCarb}g
-              </div>
-              <div className="text-[10px] sm:text-[11px] text-[#8e8e93]">คาร์บ</div>
-            </div>
-            <div className="text-center">
-              <div className="text-[16px] sm:text-[18px] font-bold text-red-500">
-                {totalFat}g
-              </div>
-              <div className="text-[10px] sm:text-[11px] text-[#8e8e93]">ไขมัน</div>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Bottom Navigation */}
@@ -1331,6 +1054,13 @@ const FoodMenu = () => {
         </div>
       )}
 
+      {/* Unrecognized Food Modal Component */}
+      <UnrecognizedFoodModal
+        open={showUnrecognizedModal}
+        onClose={() => setShowUnrecognizedModal(false)}
+        onRetry={() => setShowCameraModal(true)}
+      />
+
       {/* Transparent Loading Overlay */}
       <LoadingOverlay
         show={loading || isAnalyzing || isComparing}
@@ -1340,6 +1070,13 @@ const FoodMenu = () => {
             : isAnalyzing
             ? "กำลังวิเคราะห์รูปภาพ..."
             : "กำลังโหลดข้อมูล..."
+        }
+        description={
+          isComparing
+            ? "กำลังเทียบปริมาณอาหารก่อนและหลังกินด้วย AI"
+            : isAnalyzing
+            ? "กำลังประเมินเมนูและสารอาหารจากรูปภาพ"
+            : "กรุณารอสักครู่"
         }
       />
     </div>

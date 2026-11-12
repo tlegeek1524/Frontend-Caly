@@ -65,7 +65,7 @@ export const calculateTDEEValue = ({ bmr, activityLevel, goal }) => {
   return Math.round(tdee);
 };
 
-const API_BASE_URL = '';
+const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
 /**
  * ดึงข้อมูลผู้ใช้จาก Backend API
@@ -79,7 +79,10 @@ export const getUserService = async (lineUid) => {
       return { success: false, status: response.status };
     }
     const result = await response.json();
-    return { success: true, data: result.data || result };
+    if (result?.status === "not_found" || result?.data === null) {
+      return { success: false, status: "not_found", data: null };
+    }
+    return { success: true, data: result.data ?? result };
   } catch (error) {
     console.error('[UserService] getUserService error:', error);
     return { success: false, error };
@@ -142,3 +145,47 @@ export const updateUserService = async (lineUid, payload) => {
     return { success: false, error };
   }
 };
+
+/**
+ * ตรวจสอบสถานะผู้ดูแลระบบผ่าน GET /verifyadmin?id_token=<line_uid>
+ * @param {Object|string} params - { line_uid, id_token } หรือ line_uid string
+ * @returns {Promise<{success: boolean, data?: { line_uid?: string, is_status?: string }, status?: string, message?: string, error?: any}>}
+ */
+export const verifyAdminService = async (params) => {
+  try {
+    const lineUid =
+      typeof params === 'string'
+        ? params
+        : params?.line_uid || params?.id_token || '';
+
+    if (!lineUid) {
+      return { success: false };
+    }
+
+    const response = await fetch(
+      `${API_BASE_URL}/verifyadmin?id_token=${encodeURIComponent(lineUid)}`,
+      {
+        method: 'GET',
+        headers: {
+          accept: '*/*',
+        },
+      }
+    );
+
+    if (response.ok) {
+      const result = await response.json();
+      return {
+        success: result.status === 'success' || result.success === true || Boolean(result),
+        data: result.data || result,
+        message: result.message,
+        status: result.status,
+      };
+    }
+
+    return { success: false, status: response.status };
+  } catch (error) {
+    console.error('[UserService] verifyAdminService error:', error);
+    return { success: false, error };
+  }
+};
+

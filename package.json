@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
@@ -13,11 +13,13 @@
     "predeploy": "npm run build"
   },
   "dependencies": {
+    "@ant-design/icons": "^6.3.4",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@google/generative-ai": "^0.24.1",
     "@mui/icons-material": "^7.3.7",
     "@mui/material": "^7.3.7",
+    "antd": "^6.7.0",
     "chart.js": "^4.5.1",
     "lucide-react": "^0.563.0",
     "openai": "^6.25.0",
