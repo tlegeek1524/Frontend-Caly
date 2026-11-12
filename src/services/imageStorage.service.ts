@@ -29,7 +29,7 @@ export type UploadImageResponse = {
 
 export const uploadFoodImage = async (imageFile: File): Promise<string> => {
   const token =
-    sessionStorage.getItem("access_token") ||
+    localStorage.getItem("access_token") ||
     sessionStorage.getItem("access_token");
 
   const formData = new FormData();
