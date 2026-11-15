@@ -8,6 +8,7 @@ import dayjs from "dayjs";
 import BottomNav from "../../../components/BottomNav/BottomNav";
 import LoadingOverlay from "../../../components/Loading/LoadingOverlay";
 import UserHeader from "../../../components/UserHeader/UserHeader";
+import { APP_CONFIG } from "../../../config/appConfig";
 import { PDPAConsentModal } from "../../../components/PDPA/PDPAConsentModal";
 import { UnrecognizedFoodModal } from "../../../components/UnrecognizedFoodModal/UnrecognizedFoodModal";
 import { CalendarFireStack } from "../../../components/CalendarFireStack";
@@ -585,7 +586,7 @@ const MainDashboard = () => {
   return (
     <div className="min-h-screen bg-slate-50 pb-24 text-slate-800">
       {/* Navbar */}
-      <UserHeader title="Calories Daily" subtitle="ภาพรวมโภชนาการประจำวัน" />
+      <UserHeader title={APP_CONFIG.name} subtitle="ภาพรวมโภชนาการประจำวัน" />
 
       {/* PDPA Consent Modal */}
       <PDPAConsentModal userId={user?.id} />

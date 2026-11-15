@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { fetchEventLogsService } from "../../../../services/adminService";
 import type { EventLogRecord } from "../../../../types/admin";
 import { EventLogsTab as EventLogsTabUI } from "./EventLogsTabUI";
+import { APP_CONFIG } from "../../../../config/appConfig";
 
 export const EventLogsTab = () => {
   const [eventLogs, setEventLogs] = useState<EventLogRecord[]>([]);
@@ -23,7 +24,7 @@ export const EventLogsTab = () => {
 
   const handleExportCSV = () => {
     let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-    const filename = `caly_export_event_logs_${new Date().toISOString().slice(0, 10)}.csv`;
+    const filename = `${APP_CONFIG.name.toLowerCase()}_export_event_logs_${new Date().toISOString().slice(0, 10)}.csv`;
 
     csvContent += "Event ID,Timestamp,Category,Action,Detail,Level,Operator,IP Address\n";
     eventLogs.forEach((e) => {
