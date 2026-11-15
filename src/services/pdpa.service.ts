@@ -1,13 +1,14 @@
 import type { PDPATemplate, PDPATemplateResponse, CheckPDPAConsentResponse, SavePDPAConsentPayload } from "../types/pdpa";
 import { getStoredToken } from "../utils/sessionAuth";
+import { APP_CONFIG } from "../config/appConfig";
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:6700").replace(/\/$/, "");
 
 export const FALLBACK_PDPA_TEMPLATE: PDPATemplate = {
   id: 2,
-  title: "นโยบายความเป็นส่วนตัว (Privacy Policy) สำหรับผู้ใช้งาน Caly",
+  title: `นโยบายความเป็นส่วนตัว (Privacy Policy) สำหรับผู้ใช้งาน ${APP_CONFIG.name}`,
   version: "1.0.0",
-  content_html: "<div class=\"pdpa-content\"><h2>นโยบายความเป็นส่วนตัว</h2><p>ข้อความข้อตกลงและนโยบายความเป็นส่วนตัวในการจัดเก็บและประมวลผลข้อมูลส่วนบุคคลของผู้ใช้งาน Caly...</p></div>",
+  content_html: `<div class="pdpa-content"><h2>นโยบายความเป็นส่วนตัว</h2><p>ข้อความข้อตกลงและนโยบายความเป็นส่วนตัวในการจัดเก็บและประมวลผลข้อมูลส่วนบุคคลของผู้ใช้งาน ${APP_CONFIG.name}...</p></div>`,
   is_active: true,
   description: "เวอร์ชันเริ่มต้น บันทึกการยินยอมข้อมูลส่วนบุคคล",
   created_at: "2026-11-11T03:26:21.399Z",

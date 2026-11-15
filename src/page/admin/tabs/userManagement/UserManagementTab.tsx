@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Form, message } from "antd";
+import { APP_CONFIG } from "../../../../config/appConfig";
 import type { AdminUser, BanUserPayload, RoleDropdownItem, UserRole } from "../../../../types/admin";
 import {
   fetchAllUsersService,
@@ -128,7 +129,7 @@ export const UserManagementTab = () => {
 
   const handleExportCSV = () => {
     let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-    const filename = `caly_export_users_${new Date().toISOString().slice(0, 10)}.csv`;
+    const filename = `${APP_CONFIG.name.toLowerCase()}_export_users_${new Date().toISOString().slice(0, 10)}.csv`;
 
     csvContent += "LINE UID,Account No,Name,Gender,Age,Weight(kg),Height(cm),Activity,Goal,TDEE(cal),Status,Created At\n";
     allUsers.forEach((u) => {

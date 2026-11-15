@@ -3,6 +3,7 @@ import { fetchAuditLogsService } from "../../../../services/adminService";
 import type { AuditLogRecord } from "../../../../types/admin";
 import { AdminLogDetailModal } from "../../components/AdminModals";
 import { AuditLogsTab as AuditLogsTabUI } from "./AuditLogsTabUI";
+import { APP_CONFIG } from "../../../../config/appConfig";
 
 export const AuditLogsTab = () => {
   const [logs, setLogs] = useState<AuditLogRecord[]>([]);
@@ -26,7 +27,7 @@ export const AuditLogsTab = () => {
 
   const handleExportCSV = () => {
     let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-    const filename = `caly_export_logs_${new Date().toISOString().slice(0, 10)}.csv`;
+    const filename = `${APP_CONFIG.name.toLowerCase()}_export_logs_${new Date().toISOString().slice(0, 10)}.csv`;
 
     csvContent += "Record ID,Operator,Username,IP Address,Timestamp,Active Status\n";
     logs.forEach((l) => {

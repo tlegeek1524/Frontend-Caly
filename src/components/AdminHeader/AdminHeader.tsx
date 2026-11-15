@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { UserOutlined, LogoutOutlined } from "@ant-design/icons";
 import { ExternalLink } from "lucide-react";
 import { useApp } from "../../context/AppContext";
+import { APP_CONFIG } from "../../config/appConfig";
 import "./AdminHeader.css";
 
 type AdminHeaderProps = {
@@ -26,7 +27,7 @@ export const AdminHeader = ({
       currentUser?.name ||
       currentUser?.full_name ||
       currentUser?.username ||
-      "Admin Caly"
+      APP_CONFIG.adminTitle
   );
 
   return (

@@ -4,6 +4,7 @@ import { User, Lock, Loader2, Eye, EyeOff } from "lucide-react";
 import { Snackbar, Alert } from "@mui/material";
 import { fetchWithAuth } from "../../utils/api";
 import { setStoredToken, setStoredUser } from "../../utils/sessionAuth";
+import { APP_CONFIG } from "../../config/appConfig";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -23,11 +24,11 @@ const Login = () => {
       id: "mock-admin-1",
       accountno: "ADM001",
       username: "admin",
-      full_name: "Admin Caly",
+      full_name: APP_CONFIG.adminTitle,
       email: "admin@caly.com",
       roles: ["admin", "dev"],
       lineUid: "mock-line-uid",
-      displayName: "Admin Caly"
+      displayName: APP_CONFIG.adminTitle
     };
 
     setStoredToken("mock-access-token");

@@ -8,6 +8,7 @@ import {
 import { Sparkles } from "lucide-react";
 import toast from "react-hot-toast";
 import { getStoredUser } from "../../utils/sessionAuth";
+import { APP_CONFIG } from "../../config/appConfig";
 import { formatThaiDateRange } from "../../utils/formatDate";
 import {
   fetchLatestRecommendation,
@@ -82,7 +83,7 @@ export const setMascotVisible = (visible: boolean): void => {
 export const SideMascot = ({
   position = "bottom-right",
   messages = DEFAULT_MESSAGES,
-  characterName = "Caly Buddy",
+  characterName = APP_CONFIG.mascotName,
   showBubbleInitially = true,
   autoRotateMessages = true,
   rotateIntervalMs = 8000,
@@ -249,7 +250,7 @@ export const SideMascot = ({
     <>
       <aside
         className={`side-mascot ${positionClass}`}
-        aria-label="Caly Mascot Assistant"
+        aria-label={`${APP_CONFIG.name} Mascot Assistant`}
       >
         {/* Recommendation Popout Card / Speech Bubble */}
         <div

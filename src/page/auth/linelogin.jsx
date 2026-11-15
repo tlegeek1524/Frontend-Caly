@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LoadingOverlay from '../../components/Loading/LoadingOverlay';
+import { APP_CONFIG } from '../../config/appConfig';
 import {
   getStoredUser,
   verifyAdminStatusFromApi
@@ -80,7 +81,7 @@ const LineLogin = () => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.4} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
           </div>
-          <span className="text-xl font-bold tracking-tight text-slate-900">CALY</span>
+          <span className="text-xl font-bold tracking-tight text-slate-900">{APP_CONFIG.name}</span>
         </div>
       </header>
 
@@ -114,7 +115,7 @@ const LineLogin = () => {
                 </svg>
               </div>
               <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                Calories Daily
+                {APP_CONFIG.name}
               </h2>
               <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
                 เข้าสู่ระบบด้วย LINE เพื่อเริ่มต้นวิเคราะห์โภชนาการของคุณ
@@ -142,7 +143,7 @@ const LineLogin = () => {
 
       {/* Bottom Footer */}
       <footer className="w-full text-center text-xs text-slate-400 max-w-6xl mx-auto shrink-0 z-10">
-        © {new Date().getFullYear()} CALY. All rights reserved.
+        © {new Date().getFullYear()} {APP_CONFIG.name}. All rights reserved.
       </footer>
     </div>
   );

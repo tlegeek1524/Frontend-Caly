@@ -7,6 +7,7 @@ import { compareFoodAfterEating } from '../../../services/foodCompare.service';
 import BottomNav from '../../../components/BottomNav/BottomNav';
 import LoadingOverlay from '../../../components/Loading/LoadingOverlay';
 import UserHeader from '../../../components/UserHeader/UserHeader';
+import { APP_CONFIG } from '../../../config/appConfig';
 import { UnrecognizedFoodModal } from '../../../components/UnrecognizedFoodModal/UnrecognizedFoodModal';
 import { 
   createMenuService, 
@@ -583,7 +584,7 @@ const FoodMenu = () => {
       className="min-h-screen bg-slate-50 pb-24 text-slate-800"
     >
       {/* Navbar */}
-      <UserHeader title="Calories Daily" subtitle="บันทึกและประวัติมื้ออาหาร" />
+      <UserHeader title={APP_CONFIG.name} subtitle="บันทึกและประวัติมื้ออาหาร" />
 
       <div className="max-w-md mx-auto px-4 py-5 space-y-4 h-auto max-h-none">
         {/* Date Filter */}

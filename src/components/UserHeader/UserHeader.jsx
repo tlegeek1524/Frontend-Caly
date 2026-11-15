@@ -2,8 +2,9 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck } from 'lucide-react';
 import { getStoredUser, isAdminAuthorized } from '../../utils/sessionAuth';
+import { APP_CONFIG } from '../../config/appConfig';
 
-export const UserHeader = ({ title = 'Calories Daily', subtitle }) => {
+export const UserHeader = ({ title = APP_CONFIG.name, subtitle }) => {
   const navigate = useNavigate();
   const user = getStoredUser();
   const canAccessAdmin = isAdminAuthorized(user);
