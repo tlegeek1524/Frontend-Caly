@@ -399,6 +399,81 @@ export const calculateDailyNutrition = (foodRecords = [], foodAfterRecords = [])
   };
 };
 
+/**
+ * ลบรายการอาหาร (DELETE /api/v1/menus/{id})
+ * @param {string|number} id - รหัสรายการอาหาร
+ * @returns {Promise<{success: boolean, error?: any}>}
+ */
+export const deleteMenuService = async (id) => {
+  try {
+    if (id === undefined || id === null || !/^\d+$/.test(String(id))) {
+      console.error('[MenuService] deleteMenuService invalid id:', id);
+      return { success: false, error: 'Invalid menu id' };
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/v1/menus/${id}`, {
+      method: 'DELETE',
+      headers: {
+        'Accept': '*/*'
+      }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('[MenuService] DELETE /api/v1/menus error response:', errorData);
+      return { success: false, error: errorData };
+    }
+
+    invalidateTodayMenuCache();
+    return { success: true };
+  } catch (error) {
+    console.error('[MenuService] deleteMenuService exception:', error);
+    return { success: false, error };
+  }
+};
+
+/**
+ * ลบรายการอาหารหลังกิน (DELETE /api/v1/menus/after/{id})
+ * @param {string|number} id - รหัสรายการอาหารหลังกิน
+ * @param {string|number} foodMenuId - รหัสรายการอาหารก่อนกินที่ผูกอยู่ (food_menu_id)
+ * @returns {Promise<{success: boolean, error?: any}>}
+ */
+export const deleteMenuAfterService = async (id, foodMenuId) => {
+  try {
+    if (id === undefined || id === null || !/^\d+$/.test(String(id))) {
+      console.error('[MenuService] deleteMenuAfterService invalid id:', id);
+      return { success: false, error: 'Invalid menu after id' };
+    }
+    if (foodMenuId === undefined || foodMenuId === null || !/^\d+$/.test(String(foodMenuId))) {
+      console.error('[MenuService] deleteMenuAfterService invalid food_menu_id:', foodMenuId);
+      return { success: false, error: 'Invalid food_menu_id' };
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/v1/menus/after/${id}?food_menu_id=${encodeURIComponent(foodMenuId)}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': '*/*'
+      },
+      body: JSON.stringify({
+        food_menu_id: Number(foodMenuId)
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('[MenuService] DELETE /api/v1/menus/after error response:', errorData);
+      return { success: false, error: errorData };
+    }
+
+    invalidateTodayMenuCache();
+    return { success: true };
+  } catch (error) {
+    console.error('[MenuService] deleteMenuAfterService exception:', error);
+    return { success: false, error };
+  }
+};
+
 
 
 

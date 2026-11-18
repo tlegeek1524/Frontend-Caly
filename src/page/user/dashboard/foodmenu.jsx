@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { message, DatePicker } from 'antd';
+import { message, DatePicker, Popconfirm } from 'antd';
 import dayjs from 'dayjs';
 import { compareFoodAfterEating } from '../../../services/foodCompare.service';
 import BottomNav from '../../../components/BottomNav/BottomNav';
@@ -14,7 +14,9 @@ import {
   getMenusService, 
   createMenuAfterService, 
   getMenusAfterService, 
-  calculateDailyNutrition 
+  calculateDailyNutrition,
+  deleteMenuService,
+  deleteMenuAfterService
 } from '../../../services/menu.service';
 import { getUserService } from '../../../services/user.service';
 import { getCurrentGpsCoordinates, uploadFoodLocationService } from '../../../services/location.service';
@@ -666,9 +668,40 @@ const FoodMenu = () => {
                 >
                   <div className="px-4 py-3 flex justify-between items-center border-b border-slate-100 gap-2">
                     <span className="text-sm font-bold text-slate-900 truncate flex-1">{item.menu}</span>
-                    <span className="text-xs text-slate-400 shrink-0 font-medium">
-                      {item.date ? `${new Date(item.date).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.` : '-'}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-xs text-slate-400 font-medium">
+                        {item.date ? `${new Date(item.date).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.` : '-'}
+                      </span>
+                      <Popconfirm
+                        title="ลบรายการอาหาร"
+                        description="คุณต้องการลบรายการอาหารนี้ใช่หรือไม่?"
+                        onConfirm={async () => {
+                          const res = await deleteMenuService(item.id);
+                          if (res.success) {
+                            setFoodRecords((prev) => prev.filter((r) => r.id !== item.id));
+                            setFoodAfterRecords((prev) => prev.filter((a) => Number(a.food_menu_id) !== Number(item.id)));
+                            toast.success('ลบรายการอาหารเรียบร้อย');
+                          } else {
+                            toast.error('ลบรายการอาหารไม่สำเร็จ');
+                          }
+                        }}
+                        okText="ลบ"
+                        cancelText="ยกเลิก"
+                        okButtonProps={{ danger: true }}
+                      >
+                        <button
+                          type="button"
+                          aria-label="ลบรายการอาหาร"
+                          className="text-slate-400 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-red-50 cursor-pointer"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 6h18" />
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                          </svg>
+                        </button>
+                      </Popconfirm>
+                    </div>
                   </div>
                 <div className="p-4">
                   {/* ข้อมูลก่อนกิน */}
@@ -713,8 +746,38 @@ const FoodMenu = () => {
                   {/* ข้อมูลหลังกิน (ถ้ามี) */}
                   {afterData && (
                     <div className="mb-3 pt-3.5 border-t border-slate-100">
-                      <div className="text-xs font-semibold text-blue-700 mb-2">
-                        หลังกิน · ทานไป {afterData.eat_percent ?? afterData.eatPercent}%
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-xs font-semibold text-blue-700">
+                          หลังกิน · ทานไป {afterData.eat_percent ?? afterData.eatPercent}%
+                        </div>
+                        <Popconfirm
+                          title="ลบข้อมูลหลังกิน"
+                          description="คุณต้องการลบข้อมูลหลังกินนี้ใช่หรือไม่?"
+                          onConfirm={async () => {
+                            const res = await deleteMenuAfterService(afterData.id, afterData.food_menu_id ?? item.id);
+                            if (res.success) {
+                              setFoodAfterRecords((prev) => prev.filter((a) => a.id !== afterData.id));
+                              toast.success('ลบข้อมูลหลังกินเรียบร้อย');
+                            } else {
+                              toast.error('ลบข้อมูลหลังกินไม่สำเร็จ');
+                            }
+                          }}
+                          okText="ลบ"
+                          cancelText="ยกเลิก"
+                          okButtonProps={{ danger: true }}
+                        >
+                          <button
+                            type="button"
+                            aria-label="ลบข้อมูลหลังกิน"
+                            className="text-slate-400 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-red-50 cursor-pointer"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M3 6h18" />
+                              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                            </svg>
+                          </button>
+                        </Popconfirm>
                       </div>
                       <div className="flex gap-3.5 items-center">
                         {afterData.image ? (
